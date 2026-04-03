@@ -26,28 +26,9 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
     setLoading(true);
 
     const resolveSlug = async (): Promise<string | null> => {
-      // First try the URL param
       if (awSlugFromUrl) return awSlugFromUrl;
-
-      // Then try cache
       const cached = localStorage.getItem(`aniworldSlug:${animeId}`);
       if (cached) return cached;
-
-      // Last resort: search by title from URL
-      const title = animeSlug.replace(/-/g, ' ');
-      try {
-        const res = await fetch(`/api/aniworld/search?q=${encodeURIComponent(title)}`);
-        const data = await res.json();
-        const results = data.results ?? [];
-        if (results.length > 0) {
-          const slug = results[0].slug;
-          localStorage.setItem(`aniworldSlug:${animeId}`, slug);
-          return slug;
-        }
-      } catch {
-        // fall through
-      }
-
       return null;
     };
 
