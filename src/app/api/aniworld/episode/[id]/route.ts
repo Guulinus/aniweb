@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getEpisodeStreamLinks } from '@/lib/aniworld-client';
+import { getEpisodeStreamLinks, resolveRedirect } from '@/lib/aniworld-client';
 
 export async function GET(
   _request: Request,
@@ -28,7 +28,19 @@ export async function GET(
 
   try {
     const links = await getEpisodeStreamLinks(slug, season, episode);
-    return NextResponse.json({ links, available: links.length > 0 });
+
+    // Resolve redirects to get actual embed URLs
+    const resolvedLinks = await Promise.all(
+      links.map(async (link) => {
+        const embedUrl = await resolveRedirect(link.url);
+        return {
+          hoster: link.hoster,
+          url: embedUrl,
+        };
+      })
+    );
+
+    return NextResponse.json({ links: resolvedLinks, available: resolvedLinks.length > 0 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch stream links' },

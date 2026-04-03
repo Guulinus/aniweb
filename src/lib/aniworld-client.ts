@@ -80,7 +80,6 @@ export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]
 
   const seasons: AniworldSeason[] = [];
 
-  // Extract season numbers from href patterns like /anime/stream/slug/staffel-1
   const seasonMatches = html.matchAll(/staffel-(\d+)/g);
   const seasonNumbers = new Set<number>();
   for (const match of seasonMatches) {
@@ -114,6 +113,26 @@ export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]
   return seasons;
 }
 
+export async function resolveRedirect(redirectUrl: string): Promise<string> {
+  try {
+    const res = await fetch(redirectUrl, {
+      redirect: 'manual',
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (location) return location;
+    }
+
+    // If no redirect, return original
+    return redirectUrl;
+  } catch {
+    return redirectUrl;
+  }
+}
+
 export async function getEpisodeStreamLinks(slug: string, season: number, episode: number): Promise<StreamLink[]> {
   const url = `${BASE_URL}/anime/stream/${slug}/staffel-${season}/episode-${episode}`;
   const html = await fetchHtml(url);
@@ -122,8 +141,6 @@ export async function getEpisodeStreamLinks(slug: string, season: number, episod
   const links: StreamLink[] = [];
   const seen = new Set<string>();
 
-  // Pattern: <li class="..." data-lang-key="N" data-link-id="ID" data-link-target="/redirect/ID" ...>
-  // The li contains the data attributes, and inside it has <i class="icon HOSTER">
   const liPattern = /<li[^>]*data-lang-key="(\d+)"[^>]*data-link-id="(\d+)"[^>]*data-link-target="\/redirect\/(\d+)"[^>]*>([\s\S]*?)<\/li>/g;
 
   for (const match of html.matchAll(liPattern)) {
@@ -134,7 +151,6 @@ export async function getEpisodeStreamLinks(slug: string, season: number, episod
     // lang-key: 1=GerDub, 2=GerSub, 3=EngSub - only German
     if (langKey !== '1' && langKey !== '2') continue;
 
-    // Extract hoster from <i class="icon HOSTER">
     let hoster = 'unknown';
     const iconMatch = liContent.match(/<i class="icon ([^"]+)"/);
     if (iconMatch) {
@@ -145,60 +161,17 @@ export async function getEpisodeStreamLinks(slug: string, season: number, episod
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
 
+    // Resolve the redirect to get the actual embed URL
+    const redirectUrl = `${BASE_URL}/redirect/${redirectId}`;
+    const embedUrl = await resolveRedirect(redirectUrl);
+
     links.push({
       hoster,
-      url: `${BASE_URL}/redirect/${redirectId}`,
+      url: embedUrl,
     });
   }
 
   return links;
-}
-
-export async function resolveStreamUrl(redirectUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(redirectUrl, {
-      redirect: 'manual',
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    let embedUrl = redirectUrl;
-    if (res.status >= 300 && res.status < 400) {
-      embedUrl = res.headers.get('location') ?? redirectUrl;
-    }
-
-    if (embedUrl.includes('vidmoly')) {
-      const pageHtml = await fetchHtml(embedUrl);
-      if (pageHtml) {
-        const m3u8Match = pageHtml.match(/sources:\s*\[\s*\{\s*file:\s*["']([^"']+)["']/);
-        if (m3u8Match) return m3u8Match[1];
-        const fileMatch = pageHtml.match(/file:\s*["']([^"']+\.m3u8[^"']*)["']/);
-        if (fileMatch) return fileMatch[1];
-      }
-    }
-
-    if (embedUrl.includes('voe')) {
-      const pageHtml = await fetchHtml(embedUrl);
-      if (pageHtml) {
-        const voeMatch = pageHtml.match(/hls:\s*["']([^"']+)["']/);
-        if (voeMatch) return voeMatch[1];
-        const hlsMatch = pageHtml.match(/"hls":\s*"([^"]+)"/);
-        if (hlsMatch) return hlsMatch[1];
-      }
-    }
-
-    if (embedUrl.includes('streamtape')) {
-      const pageHtml = await fetchHtml(embedUrl);
-      if (pageHtml) {
-        const stMatch = pageHtml.match(/document\.getElementById\(['"]videolink['"]\)\.innerHTML\s*=\s*['"](\/\/[^'"]+)['"]/);
-        if (stMatch) return `https:${stMatch[1]}`;
-      }
-    }
-
-    return embedUrl;
-  } catch {
-    return null;
-  }
 }
 
 export async function findAniworldSeries(title: string, year: number | null): Promise<{
