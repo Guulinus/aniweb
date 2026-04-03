@@ -11,6 +11,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
 
   const animeId = parseInt(searchParams.get('id') ?? '0');
   const episodeTitle = searchParams.get('title') ?? `Episode ${episode}`;
+  const awSlugFromUrl = searchParams.get('awSlug');
 
   const [links, setLinks] = useState<StreamLink[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,24 +24,58 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
     if (!animeSlug || isNaN(seasonNum) || isNaN(episodeNum)) return;
 
     setLoading(true);
-    const epId = `${animeSlug}/${seasonNum}/${episodeNum}`;
 
-    fetch(`/api/aniworld/episode/${encodeURIComponent(epId)}`)
-      .then(r => r.json())
-      .then((data) => {
-        if (data.available && data.links?.length > 0) {
-          setLinks(data.links);
-          const history = JSON.parse(localStorage.getItem('watchHistory') ?? '[]');
-          const entry = { animeSlug, animeId, season: seasonNum, episode: episodeNum, title: episodeTitle, timestamp: Date.now() };
-          const filtered = history.filter((h: any) => !(h.animeSlug === animeSlug && h.season === seasonNum && h.episode === episodeNum));
-          localStorage.setItem('watchHistory', JSON.stringify([entry, ...filtered].slice(0, 50)));
-        } else {
-          setError('No German stream found for this episode');
+    const resolveSlug = async (): Promise<string | null> => {
+      // First try the URL param
+      if (awSlugFromUrl) return awSlugFromUrl;
+
+      // Then try cache
+      const cached = localStorage.getItem(`aniworldSlug:${animeId}`);
+      if (cached) return cached;
+
+      // Last resort: search by title from URL
+      const title = animeSlug.replace(/-/g, ' ');
+      try {
+        const res = await fetch(`/api/aniworld/search?q=${encodeURIComponent(title)}`);
+        const data = await res.json();
+        const results = data.results ?? [];
+        if (results.length > 0) {
+          const slug = results[0].slug;
+          localStorage.setItem(`aniworldSlug:${animeId}`, slug);
+          return slug;
         }
-      })
-      .catch(() => setError('Failed to load stream'))
-      .finally(() => setLoading(false));
-  }, [animeSlug, seasonNum, episodeNum, animeId, episodeTitle]);
+      } catch {
+        // fall through
+      }
+
+      return null;
+    };
+
+    resolveSlug().then((slug) => {
+      if (!slug) {
+        setError('Could not find this anime on Aniworld');
+        setLoading(false);
+        return;
+      }
+
+      const epId = `${slug}/${seasonNum}/${episodeNum}`;
+      fetch(`/api/aniworld/episode/${encodeURIComponent(epId)}`)
+        .then(r => r.json())
+        .then((data) => {
+          if (data.available && data.links?.length > 0) {
+            setLinks(data.links);
+            const history = JSON.parse(localStorage.getItem('watchHistory') ?? '[]');
+            const entry = { animeSlug, animeId, season: seasonNum, episode: episodeNum, title: episodeTitle, timestamp: Date.now() };
+            const filtered = history.filter((h: any) => !(h.animeSlug === animeSlug && h.season === seasonNum && h.episode === episodeNum));
+            localStorage.setItem('watchHistory', JSON.stringify([entry, ...filtered].slice(0, 50)));
+          } else {
+            setError('No German stream found for this episode');
+          }
+        })
+        .catch(() => setError('Failed to load stream'))
+        .finally(() => setLoading(false));
+    });
+  }, [animeSlug, seasonNum, episodeNum, animeId, episodeTitle, awSlugFromUrl]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
@@ -76,7 +111,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
 
       <div className="flex justify-between mt-6">
         <Link
-          href={`/watch/${animeSlug}/${seasonNum}/${episodeNum - 1}?id=${animeId}`}
+          href={`/watch/${animeSlug}/${seasonNum}/${episodeNum - 1}?id=${animeId}${awSlugFromUrl ? `&awSlug=${encodeURIComponent(awSlugFromUrl)}` : ''}`}
           className={`px-4 py-2 rounded-lg transition ${
             episodeNum > 1
               ? 'bg-gray-800 text-white hover:bg-gray-700'
@@ -87,7 +122,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
           ← Previous Episode
         </Link>
         <Link
-          href={`/watch/${animeSlug}/${seasonNum}/${episodeNum + 1}?id=${animeId}`}
+          href={`/watch/${animeSlug}/${seasonNum}/${episodeNum + 1}?id=${animeId}${awSlugFromUrl ? `&awSlug=${encodeURIComponent(awSlugFromUrl)}` : ''}`}
           className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition"
         >
           Next Episode →

@@ -6,11 +6,12 @@ import type { AniworldSeason } from '@/types';
 
 interface EpisodeListProps {
   animeSlug: string;
+  aniworldSlug: string | null;
   animeId: number;
   seasons: AniworldSeason[];
 }
 
-export default function EpisodeList({ animeSlug, animeId, seasons }: EpisodeListProps) {
+export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons }: EpisodeListProps) {
   const [activeSeason, setActiveSeason] = useState<number>(
     seasons.length > 0 ? (seasons.find(s => s.seasonNumber === 1) ? 1 : seasons[0].seasonNumber) : 0
   );
@@ -47,11 +48,10 @@ export default function EpisodeList({ animeSlug, animeId, seasons }: EpisodeList
       {currentSeason && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
           {currentSeason.episodes.map((ep) => {
-            const watchSlug = animeSlug;
             return (
               <Link
                 key={ep.number}
-                href={`/watch/${watchSlug}/${activeSeason}/${ep.number}?id=${animeId}&title=${encodeURIComponent(ep.title)}`}
+                href={`/watch/${animeSlug}/${activeSeason}/${ep.number}?id=${animeId}&title=${encodeURIComponent(ep.title)}${aniworldSlug ? `&awSlug=${encodeURIComponent(aniworldSlug)}` : ''}`}
                 className="bg-gray-700 hover:bg-purple-600 text-white text-center py-3 rounded-lg transition text-sm"
               >
                 Episode {ep.number}

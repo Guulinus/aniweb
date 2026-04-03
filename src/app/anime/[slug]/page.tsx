@@ -14,6 +14,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
   const [seasons, setSeasons] = useState<AniworldSeason[]>([]);
   const [loading, setLoading] = useState(true);
   const [aniworldLoading, setAniworldLoading] = useState(true);
+  const [aniworldSlug, setAniworldSlug] = useState<string | null>(null);
 
   useEffect(() => {
     if (!animeId) { setLoading(false); return; }
@@ -32,17 +33,64 @@ function AnimeDetailContent({ slug }: { slug: string }) {
     if (!anime) return;
 
     setAniworldLoading(true);
-    const searchTitle = anime.title.romaji.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
-    fetch(`/api/aniworld/series/${searchTitle}`)
-      .then(r => r.json())
-      .then((data) => {
-        if (data.available && data.seasons?.length > 0) {
-          setSeasons(data.seasons);
+    // Check cache first
+    const cachedSlug = localStorage.getItem(`aniworldSlug:${anime.id}`);
+    if (cachedSlug) {
+      setAniworldSlug(cachedSlug);
+      fetch(`/api/aniworld/series/${cachedSlug}`)
+        .then(r => r.json())
+        .then((data) => {
+          if (data.available && data.seasons?.length > 0) {
+            setSeasons(data.seasons);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setAniworldLoading(false));
+      return;
+    }
+
+    // Search Aniworld with both titles
+    const titles = [anime.title.romaji];
+    if (anime.title.english) titles.push(anime.title.english);
+    const year = anime.year;
+
+    const searchAll = async () => {
+      for (const title of titles) {
+        try {
+          const res = await fetch(`/api/aniworld/search?q=${encodeURIComponent(title)}`);
+          const data = await res.json();
+          const results = data.results ?? [];
+
+          // Try to find the best match
+          for (const result of results) {
+            const resultYear = parseInt(result.productionYear);
+            const yearMatch = !year || !resultYear || Math.abs(resultYear - year) <= 1;
+            if (yearMatch) {
+              const realSlug = result.slug;
+              setAniworldSlug(realSlug);
+              localStorage.setItem(`aniworldSlug:${anime.id}`, realSlug);
+
+              // Now fetch seasons with the real slug
+              const seasonRes = await fetch(`/api/aniworld/series/${realSlug}`);
+              const seasonData = await seasonRes.json();
+              if (seasonData.available && seasonData.seasons?.length > 0) {
+                setSeasons(seasonData.seasons);
+              }
+              setAniworldLoading(false);
+              return;
+            }
+          }
+        } catch {
+          continue;
         }
-      })
-      .catch(() => {})
-      .finally(() => setAniworldLoading(false));
+      }
+
+      // No match found
+      setAniworldLoading(false);
+    };
+
+    searchAll();
   }, [anime]);
 
   if (loading) {
@@ -121,6 +169,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
           ) : (
             <EpisodeList
               animeSlug={displaySlug}
+              aniworldSlug={aniworldSlug}
               animeId={anime.id}
               seasons={seasons}
             />
