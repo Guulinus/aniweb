@@ -1,0 +1,102 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import type { AnimeBasic } from '@/types';
+
+export default function SearchBar() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<AnimeBasic[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (query.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch(`/api/anilist/search?q=${encodeURIComponent(query)}&perPage=5`);
+        const data = await res.json();
+        setResults(data.results ?? []);
+      } catch {
+        setResults([]);
+      } finally {
+        setIsLoading(false);
+      }
+    }, 300);
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [query]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (query.trim()) {
+      router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <form onSubmit={handleSubmit}>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
+          onFocus={() => results.length > 0 && setIsOpen(true)}
+          placeholder="Search anime..."
+          className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-purple-500 focus:outline-none placeholder-gray-500"
+        />
+      </form>
+      {isOpen && results.length > 0 && (
+        <div className="absolute top-full mt-2 w-full bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden">
+          {results.map((anime) => (
+            <button
+              key={anime.id}
+              onClick={() => {
+                const title = anime.title.english ?? anime.title.romaji;
+                router.push(`/anime/${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}?id=${anime.id}`);
+                setIsOpen(false);
+                setQuery('');
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-700 transition text-left"
+            >
+              <img src={anime.coverImage.medium} alt="" className="w-10 h-14 object-cover rounded" />
+              <span className="text-white text-sm truncate">{anime.title.english ?? anime.title.romaji}</span>
+            </button>
+          ))}
+          <button
+            onClick={handleSubmit}
+            className="w-full px-4 py-2 text-purple-400 text-sm hover:bg-gray-700 transition border-t border-gray-700"
+          >
+            View all results
+          </button>
+        </div>
+      )}
+      {isOpen && isLoading && (
+        <div className="absolute top-full mt-2 w-full bg-gray-800 rounded-lg border border-gray-700 shadow-xl p-4 text-center text-gray-400">
+          Searching...
+        </div>
+      )}
+    </div>
+  );
+}
