@@ -2,7 +2,31 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// Comprehensive list of ad-related URL patterns
+const ALLOWED_DOMAINS = new Set([
+  'voe.sx',
+  'voe-unblock.com',
+  'voeunblk.com',
+  'voeunbl0ck.com',
+  'dood.ws',
+  'dood.to',
+  'dood.so',
+  'dood.yt',
+  'dood.li',
+  'ds2play.com',
+  'd000d.com',
+  'vidmoly.to',
+  'vidmoly.me',
+  'filemoon.sx',
+  'filemoon.to',
+  'moonembed.to',
+  'lulustream.com',
+  'luluvdo.com',
+  'vidoza.net',
+  'vidoza.co',
+  'speedfiles.org',
+  'speedfile.cc',
+]);
+
 const AD_URL_PATTERNS = [
   'ads', 'ad.', 'ad_', 'advert', 'banner', 'popup', 'popunder',
   'googlesyndication', 'doubleclick', 'googleads', 'popads',
@@ -13,15 +37,57 @@ const AD_URL_PATTERNS = [
   'chaturbate', 'cam4', 'livejasmin', 'stripchat',
 ];
 
+const PRIVATE_IP_PATTERNS = [
+  /^https?:\/\/localhost/i,
+  /^https?:\/\/127\./i,
+  /^https?:\/\/10\./i,
+  /^https?:\/\/172\.(1[6-9]|2\d|3[01])\./i,
+  /^https?:\/\/192\.168\./i,
+  /^https?:\/\/169\.254\./i,
+  /^https?:\/\/0\./i,
+  /^https?:\/\/::1/i,
+  /^https?:\/\/\[::1\]/i,
+  /^file:/i,
+  /^data:/i,
+  /^javascript:/i,
+];
+
 function isAdUrl(url: string): boolean {
   const lower = url.toLowerCase();
   return AD_URL_PATTERNS.some(pattern => lower.includes(pattern));
+}
+
+function isPrivateOrInternal(url: string): boolean {
+  return PRIVATE_IP_PATTERNS.some(pattern => pattern.test(url));
+}
+
+function isAllowedDomain(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return ALLOWED_DOMAINS.has(hostname);
+  } catch {
+    return false;
+  }
 }
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get('url');
   if (!url) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
+  }
+
+  try {
+    new URL(url);
+  } catch {
+    return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+  }
+
+  if (isPrivateOrInternal(url)) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+  }
+
+  if (!isAllowedDomain(url)) {
+    return NextResponse.json({ error: 'Domain not allowed' }, { status: 403 });
   }
 
   try {
@@ -41,25 +107,19 @@ export async function GET(request: NextRequest) {
     let html = await res.text();
     const embedOrigin = new URL(url).origin;
 
-    // Remove Cloudflare Turnstile and security checks
     html = html.replace(/<script[^>]*src=["'][^"']*challenges\.cloudflare\.com[^"']*["'][^>]*><\/script>/gi, '');
     html = html.replace(/<div[^>]*class=["']cf-turnstile["'][^>]*>[\s\S]*?<\/div>/gi, '');
     html = html.replace(/window\._cf_chl_opt[^;]*;/gi, '');
     html = html.replace(/cf_chl_exec\([^)]*\);?/gi, '');
 
-    // Remove known ad scripts
     html = html.replace(/<script[^>]*src=["'][^"']*(?:googlesyndication|doubleclick|popads|adserve|advertising|exoclick|propellerads|trafficjunky)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi, '');
 
-    // Remove inline ad scripts
     html = html.replace(/<script[^>]*>(?:[\s\S]*?)(?:popunder|popup|_pop\.|adsbygoogle|document\.write\(['"]<iframe|\.open\(['"]http[^"']*ads)[\s\S]*?<\/script>/gi, '');
 
-    // Remove ad iframes
     html = html.replace(/<iframe[^>]*src=["'][^"']*(?:ads?\.|googleads|doubleclick|popunder|popup|banner)[^"']*["'][^>]*>[\s\S]*?<\/iframe>/gi, '');
 
-    // Remove ad divs with common patterns
     html = html.replace(/<div[^>]*class=["'][^"']*(?:ad-|ads_|ad_|popup|popunder|banner-ad|overlay-ad|juicy|exoclick|propeller)[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, '');
 
-    // Inject comprehensive ad-blocking
     const adBlockCode = `
     <script>
     (function() {
@@ -84,7 +144,6 @@ export async function GET(request: NextRequest) {
                l.indexOf('popup') !== -1 || l.indexOf('ad.js') !== -1;
       }
 
-      // Block fetch
       var _fetch = window.fetch;
       window.fetch = function() {
         var u = typeof arguments[0] === 'string' ? arguments[0] : (arguments[0] && arguments[0].url) || '';
@@ -92,14 +151,12 @@ export async function GET(request: NextRequest) {
         return _fetch.apply(this, arguments);
       };
 
-      // Block XHR
       var _open = XMLHttpRequest.prototype.open;
       XMLHttpRequest.prototype.open = function(m, u) {
         if (isAd(u)) throw new Error('blocked');
         return _open.apply(this, arguments);
       };
 
-      // Block script injection
       var _createElement = document.createElement;
       document.createElement = function(tag) {
         var el = _createElement.apply(this, arguments);
@@ -118,20 +175,15 @@ export async function GET(request: NextRequest) {
         return el;
       };
 
-      // DOM observer to remove ads
       var observer = new MutationObserver(function(mutations) {
         mutations.forEach(function(m) {
           m.addedNodes.forEach(function(node) {
             if (node.nodeType !== 1) return;
             if (node.tagName === 'IFRAME') {
-              try {
-                if (isAd(node.src)) { node.remove(); return; }
-              } catch(e) {}
+              try { if (isAd(node.src)) { node.remove(); return; } } catch(e) {}
             }
             if (node.tagName === 'SCRIPT') {
-              try {
-                if (isAd(node.src)) { node.remove(); return; }
-              } catch(e) {}
+              try { if (isAd(node.src)) { node.remove(); return; } } catch(e) {}
             }
             var c = (node.className || '').toLowerCase();
             var id = (node.id || '').toLowerCase();
@@ -151,7 +203,6 @@ export async function GET(request: NextRequest) {
       if (document.body) startObserver();
       else document.addEventListener('DOMContentLoaded', startObserver);
 
-      // Hide existing ad elements
       var adEls = document.querySelectorAll('[class*="ad"],[class*="pop"],[class*="banner"],[id*="ad"],[id*="pop"],[class*="cloudflare"],[class*="turnstile"]');
       adEls.forEach(function(el) {
         el.style.cssText = 'display:none!important;visibility:hidden!important;height:0!important;width:0!important;overflow:hidden!important;';
@@ -203,7 +254,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to proxy embed' },
+      { error: 'Failed to proxy embed' },
       { status: 500 },
     );
   }

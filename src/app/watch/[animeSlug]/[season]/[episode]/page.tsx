@@ -1,10 +1,19 @@
 'use client';
 
-import { useState, useEffect, use, Suspense } from 'react';
+import { useState, useEffect, useRef, use, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import VideoPlayer from '@/components/VideoPlayer';
 import type { StreamLink } from '@/types';
+import { useWatchlist } from '@/hooks/useWatchlist';
+
+function safeParseJSON(str: string, fallback: any) {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return fallback;
+  }
+}
 
 function WatchContent({ animeSlug, season, episode }: { animeSlug: string; season: string; episode: string }) {
   const searchParams = useSearchParams();
@@ -16,13 +25,45 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
   const [links, setLinks] = useState<StreamLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [animeTitle, setAnimeTitle] = useState<string | null>(null);
+  const [coverImage, setCoverImage] = useState<string>('');
+
+  const animeTitleRef = useRef(animeTitle);
+  const coverImageRef = useRef(coverImage);
+
+  const { add, isInWatchlist, getEntry, updateProgress } = useWatchlist();
 
   const seasonNum = parseInt(season);
   const episodeNum = parseInt(episode);
 
   useEffect(() => {
+    animeTitleRef.current = animeTitle;
+    coverImageRef.current = coverImage;
+  }, [animeTitle, coverImage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!animeId) return;
+    fetch(`/api/anilist/search?id=${animeId}`)
+      .then(r => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.results?.[0]) {
+          const a = data.results[0];
+          const rawTitle = a.title.english ?? a.title.romaji ?? '';
+          const cleanTitle = rawTitle.replace(/\s*(Season\s*\d+|Part\s*\d+|:.*|-.*)$/i, '').trim();
+          setAnimeTitle(cleanTitle || rawTitle);
+          setCoverImage(a.coverImage?.large ?? a.coverImage?.medium ?? '');
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [animeId]);
+
+  useEffect(() => {
     if (!animeSlug || isNaN(seasonNum) || isNaN(episodeNum)) return;
 
+    let cancelled = false;
     setLoading(true);
 
     const resolveSlug = async (): Promise<string | null> => {
@@ -33,6 +74,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
     };
 
     resolveSlug().then((slug) => {
+      if (cancelled) return;
       if (!slug) {
         setError('Could not find this anime on Aniworld');
         setLoading(false);
@@ -43,20 +85,49 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
       fetch(`/api/aniworld/episode/${encodeURIComponent(epId)}`)
         .then(r => r.json())
         .then((data) => {
+          if (cancelled) return;
           if (data.available && data.links?.length > 0) {
             setLinks(data.links);
-            const history = JSON.parse(localStorage.getItem('watchHistory') ?? '[]');
-            const entry = { animeSlug, animeId, season: seasonNum, episode: episodeNum, title: episodeTitle, timestamp: Date.now() };
+
+            const history = safeParseJSON(localStorage.getItem('watchHistory') ?? '[]', []);
+            const entry = { animeSlug, animeId, season: seasonNum, episode: episodeNum, title: animeTitleRef.current, timestamp: Date.now() };
             const filtered = history.filter((h: any) => !(h.animeSlug === animeSlug && h.season === seasonNum && h.episode === episodeNum));
-            localStorage.setItem('watchHistory', JSON.stringify([entry, ...filtered].slice(0, 50)));
+            try {
+              localStorage.setItem('watchHistory', JSON.stringify([entry, ...filtered].slice(0, 50)));
+            } catch {
+              // localStorage full, ignore
+            }
+
+            if (isInWatchlist(animeId)) {
+              const existing = getEntry(animeId);
+              if (existing && existing.status === 'PLANNING') {
+                existing.status = 'WATCHING';
+              }
+              updateProgress(animeId, episodeNum);
+            } else {
+              add({
+                animeId,
+                animeSlug,
+                title: animeTitleRef.current ?? animeSlug.replace(/-/g, ' '),
+                coverImage: coverImageRef.current,
+                status: 'WATCHING',
+                currentEpisode: episodeNum,
+              });
+            }
           } else {
             setError('No German stream found for this episode');
           }
         })
-        .catch(() => setError('Failed to load stream'))
-        .finally(() => setLoading(false));
+        .catch(() => {
+          if (!cancelled) setError('Failed to load stream');
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     });
-  }, [animeSlug, seasonNum, episodeNum, animeId, episodeTitle, awSlugFromUrl]);
+
+    return () => { cancelled = true; };
+  }, [animeSlug, seasonNum, episodeNum, animeId, awSlugFromUrl]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
@@ -67,7 +138,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
       </div>
 
       <h1 className="text-xl font-bold text-white mb-4">
-        {episodeTitle} — Season {seasonNum}, Episode {episodeNum}
+        {animeTitle ? `${animeTitle} — Season ${seasonNum}, Episode ${episodeNum}` : `Season ${seasonNum}, Episode ${episodeNum}`}
       </h1>
 
       {loading ? (

@@ -6,11 +6,11 @@ export async function GET(request: NextRequest) {
   const perPage = parseInt(request.nextUrl.searchParams.get('perPage') ?? '20');
 
   try {
-    const data = await getTrendingAnime(page, Math.min(perPage, 50));
-    return NextResponse.json(data);
-  } catch (error) {
+    const data = await getTrendingAnime(isNaN(page) ? 1 : page, Math.min(isNaN(perPage) ? 20 : perPage, 50));
+    return NextResponse.json(data, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
+  } catch {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to fetch trending anime' },
+      { error: 'Failed to fetch trending anime' },
       { status: 500 },
     );
   }

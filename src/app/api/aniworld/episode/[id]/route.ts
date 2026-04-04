@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getEpisodeStreamLinks, resolveRedirect } from '@/lib/aniworld-client';
-import { extractVoe } from '@/lib/voe-extractor';
+import { getEpisodeStreamLinks } from '@/lib/aniworld-client';
+import { extractDirectUrl } from '@/lib/hosters';
 
 export async function GET(
   _request: Request,
@@ -30,32 +30,66 @@ export async function GET(
   try {
     const links = await getEpisodeStreamLinks(slug, season, episode);
 
-    // Extract direct video URLs from embed hosts
+    // Extract direct video URLs with timeout for each hoster
+    const extractionTimeout = 8000; // 8 seconds per hoster
+
     const resolvedLinks = await Promise.all(
       links.map(async (link) => {
-        let directUrl = link.url;
+        try {
+          // Race between extraction and timeout
+          const result = await Promise.race([
+            extractDirectUrl(link.url, link.hoster),
+            new Promise<null>(resolve =>
+              setTimeout(() => resolve(null), extractionTimeout)
+            ),
+          ]);
 
-        // Voe: use our custom extractor to get the .m3u8 URL
-        if (link.hoster.includes('voe') || link.url.includes('voe') || link.url.includes('jefferycontrolmodel')) {
-          const voeUrl = await extractVoe(link.url);
-          if (voeUrl) directUrl = voeUrl;
+          if (result) {
+            return {
+              hoster: result.hoster,
+              url: result.url,
+              language: link.language,
+              hasAds: false,
+            };
+          }
+        } catch {
+          // Extraction failed, return original
         }
 
+        // Fallback to original URL if extraction failed (embed = has ads)
         return {
           hoster: link.hoster,
-          url: directUrl,
+          url: link.url,
+          language: link.language,
+          hasAds: true,
         };
       })
     );
 
-    // Prefer Voe (ad-free with our extractor), then others
-    resolvedLinks.sort((a, b) => {
-      const aIsVoe = a.url.includes('.m3u8') ? 0 : 1;
-      const bIsVoe = b.url.includes('.m3u8') ? 0 : 1;
-      return aIsVoe - bIsVoe;
-    });
+    // Sort: prefer m3u8 (HLS) streams, then known working hosters
+    const hosterPriority = ['voe', 'vidoza', 'vidmoly', 'lulustream', 'doodstream', 'filemoon'];
 
-    return NextResponse.json({ links: resolvedLinks, available: resolvedLinks.length > 0 });
+    const sortedLinks = resolvedLinks
+      .filter(link => link.url)
+      .sort((a, b) => {
+        // Prefer extracted m3u8 URLs (direct and ad-free)
+        const aIsHls = a.url.includes('.m3u8');
+        const bIsHls = b.url.includes('.m3u8');
+        if (aIsHls && !bIsHls) return -1;
+        if (!aIsHls && bIsHls) return 1;
+
+        // Then prefer known working hosters
+        const aPriority = hosterPriority.indexOf(a.hoster.toLowerCase());
+        const bPriority = hosterPriority.indexOf(b.hoster.toLowerCase());
+
+        if (aPriority !== -1 && bPriority === -1) return -1;
+        if (aPriority === -1 && bPriority !== -1) return 1;
+        if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority;
+
+        return 0;
+      });
+
+    return NextResponse.json({ links: sortedLinks, available: sortedLinks.length > 0 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to fetch stream links' },

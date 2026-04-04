@@ -14,6 +14,9 @@ export default function Navbar() {
               <Link href="/browse" className="text-gray-300 hover:text-white transition">
                 Browse
               </Link>
+              <Link href="/watchlist" className="text-gray-300 hover:text-white transition">
+                Watchlist
+              </Link>
             </div>
           </div>
           <div className="flex-1 max-w-md mx-4">

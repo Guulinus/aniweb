@@ -78,22 +78,27 @@ export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]
   const html = await fetchHtml(`${BASE_URL}/anime/stream/${slug}`);
   if (!html) return [];
 
-  const seasons: AniworldSeason[] = [];
-
-  const seasonMatches = html.matchAll(/staffel-(\d+)/g);
   const seasonNumbers = new Set<number>();
+  const seasonMatches = html.matchAll(/staffel-(\d+)/g);
   for (const match of seasonMatches) {
     seasonNumbers.add(parseInt(match[1]));
   }
 
-  for (const seasonNum of [...seasonNumbers].sort((a, b) => a - b)) {
-    const episodePattern = new RegExp(`staffel-${seasonNum}/episode-(\\d+)`, 'g');
-    const episodeNumbers: number[] = [];
-    for (const match of html.matchAll(episodePattern)) {
-      episodeNumbers.push(parseInt(match[1]));
-    }
+  const sortedSeasons = [...seasonNumbers].sort((a, b) => a - b);
 
-    if (episodeNumbers.length > 0) {
+  const seasonResults = await Promise.all(
+    sortedSeasons.map(async (seasonNum) => {
+      const seasonHtml = await fetchHtml(`${BASE_URL}/anime/stream/${slug}/staffel-${seasonNum}`);
+      if (!seasonHtml) return null;
+
+      const episodePattern = /episode-(\d+)/g;
+      const episodeNumbers: number[] = [];
+      for (const match of seasonHtml.matchAll(episodePattern)) {
+        episodeNumbers.push(parseInt(match[1]));
+      }
+
+      if (episodeNumbers.length === 0) return null;
+
       const maxEpisode = Math.max(...episodeNumbers);
       const episodes = [];
       for (let i = 1; i <= maxEpisode; i++) {
@@ -103,14 +108,14 @@ export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]
           slug: '',
         });
       }
-      seasons.push({
+      return {
         seasonNumber: seasonNum,
         episodes,
-      });
-    }
-  }
+      };
+    })
+  );
 
-  return seasons;
+  return seasonResults.filter((s): s is NonNullable<typeof s> => s !== null);
 }
 
 export async function resolveRedirect(redirectUrl: string): Promise<string> {
@@ -157,6 +162,8 @@ export async function getEpisodeStreamLinks(slug: string, season: number, episod
       hoster = iconMatch[1].toLowerCase();
     }
 
+    const language = langKey === '1' ? 'Ger-Dub' : 'Ger-Sub';
+
     const linkKey = `${hoster}-${langKey}`;
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
@@ -168,6 +175,7 @@ export async function getEpisodeStreamLinks(slug: string, season: number, episod
     links.push({
       hoster,
       url: embedUrl,
+      language,
     });
   }
 

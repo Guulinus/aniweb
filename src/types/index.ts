@@ -46,6 +46,8 @@ export interface AniworldSeason {
 export interface StreamLink {
   hoster: string;
   url: string;
+  language?: string;
+  hasAds?: boolean;
 }
 
 export interface EpisodeStream {
@@ -67,4 +69,17 @@ export interface BrowseResponse extends SearchResponse {
     perPage: number;
     total: number;
   };
+}
+
+export type WatchlistStatus = 'PLANNING' | 'WATCHING' | 'COMPLETED' | 'ON_HOLD' | 'DROPPED';
+
+export interface WatchlistEntry {
+  animeId: number;
+  animeSlug: string;
+  title: string;
+  coverImage: string;
+  status: WatchlistStatus;
+  currentEpisode?: number;
+  totalEpisodes?: number | null;
+  addedAt: number;
 }

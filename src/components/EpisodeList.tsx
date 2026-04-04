@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import type { AniworldSeason } from '@/types';
 
@@ -12,9 +12,16 @@ interface EpisodeListProps {
 }
 
 export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons }: EpisodeListProps) {
-  const [activeSeason, setActiveSeason] = useState<number>(
-    seasons.length > 0 ? (seasons.find(s => s.seasonNumber === 1) ? 1 : seasons[0].seasonNumber) : 0
+  const sortedSeasons = useMemo(
+    () => [...seasons].sort((a, b) => a.seasonNumber - b.seasonNumber),
+    [seasons]
   );
+
+  const latestSeason = sortedSeasons.length > 0
+    ? sortedSeasons[sortedSeasons.length - 1].seasonNumber
+    : 0;
+
+  const [activeSeason, setActiveSeason] = useState<number>(latestSeason);
 
   if (seasons.length === 0) {
     return (
@@ -25,12 +32,12 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons 
     );
   }
 
-  const currentSeason = seasons.find(s => s.seasonNumber === activeSeason);
+  const currentSeason = sortedSeasons.find(s => s.seasonNumber === activeSeason);
 
   return (
     <div className="bg-gray-800/50 rounded-lg p-6">
       <div className="flex flex-wrap gap-2 mb-4">
-        {seasons.map((season) => (
+        {sortedSeasons.map((season) => (
           <button
             key={season.seasonNumber}
             onClick={() => setActiveSeason(season.seasonNumber)}
@@ -46,18 +53,23 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons 
       </div>
 
       {currentSeason && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
-          {currentSeason.episodes.map((ep) => {
-            return (
-              <Link
-                key={ep.number}
-                href={`/watch/${animeSlug}/${activeSeason}/${ep.number}?id=${animeId}&title=${encodeURIComponent(ep.title)}${aniworldSlug ? `&awSlug=${encodeURIComponent(aniworldSlug)}` : ''}`}
-                className="bg-gray-700 hover:bg-purple-600 text-white text-center py-3 rounded-lg transition text-sm"
-              >
-                Episode {ep.number}
-              </Link>
-            );
-          })}
+        <div>
+          <p className="text-sm text-gray-400 mb-3">
+            {currentSeason.seasonNumber === 0 ? 'Movies' : `Season ${currentSeason.seasonNumber}`} — {currentSeason.episodes.length} episodes
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            {currentSeason.episodes.map((ep) => {
+              return (
+                <Link
+                  key={ep.number}
+                  href={`/watch/${animeSlug}/${activeSeason}/${ep.number}?id=${animeId}&title=${encodeURIComponent(ep.title)}${aniworldSlug ? `&awSlug=${encodeURIComponent(aniworldSlug)}` : ''}`}
+                  className="bg-gray-700 hover:bg-purple-600 text-white text-center py-3 rounded-lg transition text-sm"
+                >
+                  Episode {ep.number}
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

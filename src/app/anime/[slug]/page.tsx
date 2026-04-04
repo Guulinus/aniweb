@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import EpisodeList from '@/components/EpisodeList';
 import type { AnimeDetail, AniworldSeason } from '@/types';
 import { toSlug } from '@/lib/slug';
+import { useWatchlist } from '@/hooks/useWatchlist';
+import { sanitizeHtml } from '@/lib/sanitize';
 
 function AnimeDetailContent({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
@@ -15,6 +17,12 @@ function AnimeDetailContent({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [aniworldLoading, setAniworldLoading] = useState(true);
   const [aniworldSlug, setAniworldSlug] = useState<string | null>(null);
+
+  const { add, remove, isInWatchlist, getEntry } = useWatchlist();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   useEffect(() => {
     if (!animeId) { setLoading(false); return; }
@@ -34,7 +42,6 @@ function AnimeDetailContent({ slug }: { slug: string }) {
 
     setAniworldLoading(true);
 
-    // Check cache first
     const cachedSlug = localStorage.getItem(`aniworldSlug:${anime.id}`);
     if (cachedSlug) {
       setAniworldSlug(cachedSlug);
@@ -50,7 +57,6 @@ function AnimeDetailContent({ slug }: { slug: string }) {
       return;
     }
 
-    // Use unified find endpoint - does all searching server-side
     const title = anime.title.romaji;
     const year = anime.year;
 
@@ -81,9 +87,30 @@ function AnimeDetailContent({ slug }: { slug: string }) {
 
   const title = anime.title.english ?? anime.title.romaji;
   const displaySlug = toSlug(title);
+  const inWatchlist = isInWatchlist(anime.id);
+  const currentEntry = getEntry(anime.id);
+
+  const handleWatchlistToggle = () => {
+    if (inWatchlist) {
+      remove(anime.id);
+    } else {
+      add({
+        animeId: anime.id,
+        animeSlug: displaySlug,
+        title,
+        coverImage: anime.coverImage.large || anime.coverImage.medium,
+        status: 'PLANNING',
+        totalEpisodes: anime.episodes,
+      });
+    }
+  };
+
+  const statusLabel = currentEntry?.status === 'WATCHING' ? 'Watching'
+    : currentEntry?.status === 'COMPLETED' ? 'Completed'
+    : 'Plan to Watch';
 
   return (
-    <div>
+    <div className="relative">
       {anime.bannerImage && (
         <div className="relative h-64 md:h-80 overflow-hidden">
           <img
@@ -95,7 +122,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 -mt-32 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 relative z-10" style={{ marginTop: anime.bannerImage ? '-8rem' : '2rem' }}>
         <div className="flex flex-col md:flex-row gap-6">
           <img
             src={anime.coverImage.large || anime.coverImage.medium}
@@ -125,10 +152,23 @@ function AnimeDetailContent({ slug }: { slug: string }) {
               {anime.year && <span>• {anime.year}</span>}
             </div>
 
+            <div className="mb-4">
+              <button
+                onClick={handleWatchlistToggle}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                  inWatchlist
+                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white'
+                }`}
+              >
+                {inWatchlist ? `✓ ${statusLabel}` : '+ Watchlist'}
+              </button>
+            </div>
+
             {anime.description && (
               <div
                 className="text-gray-300 leading-relaxed max-w-3xl"
-                dangerouslySetInnerHTML={{ __html: anime.description }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(anime.description) }}
               />
             )}
           </div>
@@ -142,6 +182,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
             <div className="text-gray-400 py-8 text-center">Loading episodes...</div>
           ) : (
             <EpisodeList
+              key={anime.id}
               animeSlug={displaySlug}
               aniworldSlug={aniworldSlug}
               animeId={anime.id}
