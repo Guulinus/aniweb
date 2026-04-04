@@ -42,11 +42,14 @@ async function fetchHtml(url: string, retries = 2): Promise<string | null> {
         signal: AbortSignal.timeout(20000),
       });
 
+      console.log(`[aniworld] fetchHtml: ${url} -> status ${res.status}, attempt ${attempt + 1}`);
+
       if (res.status === 403 || res.status === 429) {
         if (attempt < retries) {
           await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
           continue;
         }
+        console.log(`[aniworld] blocked after ${retries + 1} attempts`);
         return null;
       }
 
@@ -54,7 +57,8 @@ async function fetchHtml(url: string, retries = 2): Promise<string | null> {
       const html = await res.text();
 
       // Check if this is a Cloudflare challenge page
-      if (html.includes('cf-chl-bypass') || html.includes('cf-turnstile') || html.includes('__cf_chl')) {
+      if (html.includes('cf-chl-bypass') || html.includes('cf-turnstile') || html.includes('__cf_chl') || html.includes('Just a moment')) {
+        console.log(`[aniworld] Cloudflare challenge detected`);
         if (attempt < retries) {
           await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
           continue;
@@ -64,7 +68,8 @@ async function fetchHtml(url: string, retries = 2): Promise<string | null> {
 
       cache.set(url, html);
       return html;
-    } catch {
+    } catch (err) {
+      console.log(`[aniworld] fetchHtml error: ${err}`);
       if (attempt < retries) {
         await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
         continue;
