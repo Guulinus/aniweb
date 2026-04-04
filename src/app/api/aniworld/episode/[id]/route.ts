@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getEpisodeStreamLinks, resolveRedirect } from '@/lib/aniworld-client';
+import { extractVoe } from '@/lib/voe-extractor';
 
 export async function GET(
   _request: Request,
@@ -29,16 +30,30 @@ export async function GET(
   try {
     const links = await getEpisodeStreamLinks(slug, season, episode);
 
-    // Resolve redirects to get actual embed URLs
+    // Extract direct video URLs from embed hosts
     const resolvedLinks = await Promise.all(
       links.map(async (link) => {
-        const embedUrl = await resolveRedirect(link.url);
+        let directUrl = link.url;
+
+        // Voe: use our custom extractor to get the .m3u8 URL
+        if (link.hoster.includes('voe') || link.url.includes('voe') || link.url.includes('jefferycontrolmodel')) {
+          const voeUrl = await extractVoe(link.url);
+          if (voeUrl) directUrl = voeUrl;
+        }
+
         return {
           hoster: link.hoster,
-          url: embedUrl,
+          url: directUrl,
         };
       })
     );
+
+    // Prefer Voe (ad-free with our extractor), then others
+    resolvedLinks.sort((a, b) => {
+      const aIsVoe = a.url.includes('.m3u8') ? 0 : 1;
+      const bIsVoe = b.url.includes('.m3u8') ? 0 : 1;
+      return aIsVoe - bIsVoe;
+    });
 
     return NextResponse.json({ links: resolvedLinks, available: resolvedLinks.length > 0 });
   } catch (error) {
