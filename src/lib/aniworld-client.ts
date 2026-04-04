@@ -4,7 +4,7 @@ import type { AniworldSeason, StreamLink } from '@/types';
 const cache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
 const BASE_URL = 'https://aniworld.to';
-const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 interface SearchResult {
   title: string;
@@ -14,40 +14,104 @@ interface SearchResult {
   productionYear: string;
 }
 
-async function fetchHtml(url: string): Promise<string | null> {
+const BROWSER_HEADERS = {
+  'User-Agent': USER_AGENT,
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Connection': 'keep-alive',
+  'Upgrade-Insecure-Requests': '1',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
+  'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"Windows"',
+};
+
+async function fetchHtml(url: string, retries = 2): Promise<string | null> {
   const cached = cache.get<string>(url);
   if (cached) return cached;
 
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
-    cache.set(url, html);
-    return html;
-  } catch {
-    return null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: BROWSER_HEADERS,
+        redirect: 'follow',
+        signal: AbortSignal.timeout(20000),
+      });
+
+      if (res.status === 403 || res.status === 429) {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        return null;
+      }
+
+      if (!res.ok) return null;
+      const html = await res.text();
+
+      // Check if this is a Cloudflare challenge page
+      if (html.includes('cf-chl-bypass') || html.includes('cf-turnstile') || html.includes('__cf_chl')) {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+          continue;
+        }
+        return null;
+      }
+
+      cache.set(url, html);
+      return html;
+    } catch {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+        continue;
+      }
+      return null;
+    }
   }
+
+  return null;
 }
 
 async function fetchJson(url: string, method: string = 'GET', body?: URLSearchParams): Promise<any> {
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        'User-Agent': USER_AGENT,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: body ? body.toString() : undefined,
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'User-Agent': USER_AGENT,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json, text/plain, */*',
+          'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Origin': BASE_URL,
+          'Referer': BASE_URL + '/',
+        },
+        body: body ? body.toString() : undefined,
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (res.status === 403 || res.status === 429) {
+        if (attempt < 1) {
+          await new Promise(r => setTimeout(r, 3000));
+          continue;
+        }
+        return null;
+      }
+
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      if (attempt < 1) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+      return null;
+    }
   }
+  return null;
 }
 
 export async function searchAniworld(query: string): Promise<SearchResult[]> {
