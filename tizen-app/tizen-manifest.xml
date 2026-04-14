@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest xmlns="http://www.tizen.org/ns/2012/tizen" package="com.aniroll.app" version="1.0.0" api-version="2.4">
+    <name>AniRoll</name>
+    <description>AniRoll - Anime Streaming for Samsung Smart TV</description>
+    <author email="support@aniroll.com">AniRoll Team</author>
+    <profile name="tv-samsung" />
+    <ui-application appid="com.aniroll.app" launch-mode="single" name="AniRoll" package="com.aniroll.app">
+        <label>AniRoll</label>
+        <icon>icon.png</icon>
+        <splashscreen>splash.png</splashscreen>
+    </ui-application>
+    <Privileges>
+        <privilege name="http://tizen.org/privilege/internet" />
+        <privilege name="http://tizen.org/privilege/network.get" />
+    </Privileges>
+</manifest>

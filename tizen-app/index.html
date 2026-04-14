@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AniRoll</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            overflow: hidden;
+        }
+        #loading {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #0f0f23;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            font-family: sans-serif;
+            color: #a855f7;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 4px solid #374151;
+            border-top-color: #a855f7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <span>Loading AniRoll...</span>
+    </div>
+    <iframe id="webview" src="http://YOUR_PI_IP:3000"></iframe>
+    <script>
+        const iframe = document.getElementById('webview');
+        const loading = document.getElementById('loading');
+        const WEBVIEW_URL = 'http://192.168.178.84:3000'; // Change to your Pi's IP
+        
+        iframe.src = WEBVIEW_URL;
+        
+        iframe.onload = function() {
+            loading.style.display = 'none';
+        };
+        
+        iframe.onerror = function() {
+            loading.innerHTML = '<span style="color:#ef4444">Failed to load. Check IP address.</span>';
+        };
+    </script>
+</body>
+</html>
