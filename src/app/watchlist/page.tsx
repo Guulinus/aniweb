@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useWatchlist } from '@/hooks/useWatchlist';
+import { Skeleton } from '@/components/Skeleton';
 import type { WatchlistStatus, AnimeBasic } from '@/types';
 
 const statusLabels: Record<WatchlistStatus, string> = {
@@ -52,7 +53,22 @@ export default function WatchlistPage() {
     : entries.filter((e) => e.status === filter);
 
   if (loading) {
-    return <div className="max-w-7xl mx-auto px-4 py-8 text-gray-400">Loading...</div>;
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold text-white mb-6">Watchlist</h1>
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="flex items-center gap-4 bg-gray-900 border border-gray-800 rounded-lg p-4">
+              <div className="w-16 h-24 bg-gray-800 rounded animate-pulse" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-gray-800 rounded w-1/3 animate-pulse" />
+                <div className="h-3 bg-gray-800 rounded w-1/4 animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (entries.length === 0) {

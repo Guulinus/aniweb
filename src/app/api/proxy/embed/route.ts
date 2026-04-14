@@ -64,7 +64,18 @@ function isPrivateOrInternal(url: string): boolean {
 function isAllowedDomain(url: string): boolean {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
-    return ALLOWED_DOMAINS.has(hostname);
+    const domain = hostname.replace(/^www\./, '');
+    
+    // Check exact match and prevent subdomain bypass
+    if (ALLOWED_DOMAINS.has(domain)) return true;
+    
+    // Check if it's a subdomain of an allowed domain
+    for (const allowed of ALLOWED_DOMAINS) {
+      if (hostname === allowed || hostname.endsWith('.' + allowed)) {
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }
@@ -80,6 +91,12 @@ export async function GET(request: NextRequest) {
     new URL(url);
   } catch {
     return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+  }
+
+  // Allow http for local development, https for production
+  const isLocalhost = new URL(url).hostname === 'localhost' || new URL(url).hostname === '127.0.0.1';
+  if (!url.startsWith('https://') && !isLocalhost) {
+    return NextResponse.json({ error: 'Only HTTPS URLs are allowed' }, { status: 400 });
   }
 
   if (isPrivateOrInternal(url)) {

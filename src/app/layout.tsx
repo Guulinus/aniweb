@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { LanguageProvider } from "@/hooks/useLanguage";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,8 +17,16 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AniWeb - Anime mit deutscher Synchronisation",
-  description: "Kostenlos Anime mit deutscher Synchronisation streamen",
+  title: "AniRoll - Anime mit deutscher Synchronisation kostenlos streamen",
+  description: "Kostenlos Anime mit deutscher Synchronisation streamen - AniRoll bietet eine große Auswahl an Anime-Serien und Filmen in HD-Qualität.",
+  keywords: ["Anime streamen", "Anime kostenlos", "deutsche Synchronisation", "AniRoll", "Anime HD"],
+  authors: [{ name: "AniRoll" }],
+  openGraph: {
+    title: "AniRoll - Anime mit deutscher Synchronisation kostenlos streamen",
+    description: "Kostenlos Anime mit deutscher Synchronisation streamen",
+    type: "website",
+    locale: "de_DE",
+  },
 };
 
 export default function RootLayout({
@@ -29,10 +39,13 @@ export default function RootLayout({
       lang="de"
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="bg-gray-950 text-white">
+      <body className="bg-gray-950 text-white flex flex-col min-h-screen">
         <ErrorBoundary>
-          <Navbar />
-          <main>{children}</main>
+          <LanguageProvider>
+            <Navbar />
+            <main className="flex-1">{children}</main>
+            <Footer />
+          </LanguageProvider>
         </ErrorBoundary>
       </body>
     </html>

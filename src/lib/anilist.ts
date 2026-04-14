@@ -7,7 +7,7 @@ async function anilistQuery<T>(query: string, variables?: Record<string, unknown
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ query, variables }),
-    next: { revalidate: 3600 },
+    next: { revalidate: 300 }, // 5 min cache
   });
 
   if (!response.ok) {
@@ -24,6 +24,16 @@ async function anilistQuery<T>(query: string, variables?: Record<string, unknown
 }
 
 function mapMediaToBasic(media: any): AnimeBasic {
+  const episodeThumbnails: Record<number, string> = {};
+  if (media.streamingEpisodes) {
+    for (let i = 0; i < media.streamingEpisodes.length; i++) {
+      const ep = media.streamingEpisodes[i];
+      if (ep.thumbnail) {
+        episodeThumbnails[i + 1] = ep.thumbnail;
+      }
+    }
+  }
+  
   return {
     id: media.id,
     title: {
@@ -35,12 +45,15 @@ function mapMediaToBasic(media: any): AnimeBasic {
       large: media.coverImage?.large ?? '',
       medium: media.coverImage?.medium ?? '',
     },
+    bannerImage: media.bannerImage ?? null,
     format: media.format ?? 'UNKNOWN',
     status: media.status ?? 'UNKNOWN',
     episodes: media.episodes ?? null,
     averageScore: media.averageScore ?? null,
     year: media.startDate?.year ?? null,
     genres: media.genres ?? [],
+    description: media.description ?? null,
+    episodeThumbnails: Object.keys(episodeThumbnails).length > 0 ? episodeThumbnails : null,
   };
 }
 
@@ -51,6 +64,7 @@ export async function getTrendingAnime(page = 1, perPage = 20): Promise<BrowseRe
         pageInfo { currentPage hasNextPage lastPage perPage total }
         media(type: ANIME, sort: [TRENDING_DESC, POPULARITY_DESC], isAdult: false) {
           id title { romaji english native } coverImage { large medium }
+          bannerImage
           format status episodes averageScore genres
           startDate { year }
         }
@@ -75,6 +89,7 @@ export async function getPopularAnime(page = 1, perPage = 20): Promise<BrowseRes
         pageInfo { currentPage hasNextPage lastPage perPage total }
         media(type: ANIME, sort: [POPULARITY_DESC], isAdult: false) {
           id title { romaji english native } coverImage { large medium }
+          bannerImage
           format status episodes averageScore genres
           startDate { year }
         }
@@ -92,21 +107,23 @@ export async function getPopularAnime(page = 1, perPage = 20): Promise<BrowseRes
   };
 }
 
-export async function searchAnime(queryStr: string, page = 1, perPage = 20): Promise<SearchResponse> {
+export async function searchAnime(queryStr: string, page = 1, perPage = 20, sort = 'POPULARITY_DESC'): Promise<SearchResponse> {
   const query = `
-    query ($search: String!, $page: Int, $perPage: Int) {
+    query ($search: String!, $page: Int, $perPage: Int, $sort: [MediaSort]) {
       Page(page: $page, perPage: $perPage) {
         pageInfo { hasNextPage }
-        media(search: $search, type: ANIME, isAdult: false) {
+        media(search: $search, type: ANIME, isAdult: false, sort: $sort) {
           id title { romaji english native } coverImage { large medium }
+          bannerImage
           format status episodes averageScore genres
           startDate { year }
+          description
         }
       }
     }
   `;
 
-  const data = await anilistQuery<any>(query, { search: queryStr, page, perPage });
+  const data = await anilistQuery<any>(query, { search: queryStr, page, perPage, sort: [sort] });
 
   return {
     results: data.Page.media.map(mapMediaToBasic),
@@ -122,6 +139,7 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
         format status episodes averageScore genres
         startDate { year }
         description bannerImage
+        streamingEpisodes { thumbnail title site }
         relations {
           edges {
             relationType
@@ -139,11 +157,22 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
     throw new Error(`Anime with ID ${id} not found`);
   }
 
+  const episodeThumbnails: Record<number, string> = {};
+  if (media.streamingEpisodes) {
+    for (let i = 0; i < media.streamingEpisodes.length; i++) {
+      const ep = media.streamingEpisodes[i];
+      if (ep.thumbnail) {
+        episodeThumbnails[i + 1] = ep.thumbnail;
+      }
+    }
+  }
+
   return {
     ...mapMediaToBasic(media),
     description: media.description ?? null,
     bannerImage: media.bannerImage ?? null,
     relations: media.relations ?? { edges: [] },
+    episodeThumbnails: Object.keys(episodeThumbnails).length > 0 ? episodeThumbnails : null,
   };
 }
 
@@ -180,15 +209,18 @@ export async function browseAnime(options: {
   const query = `
     query (
       $page: Int, $perPage: Int, $sort: [MediaSort], $isAdult: Boolean,
-      $genres: [String], $status: MediaStatus, $format: MediaFormat, $seasonYear: Int
+      $genres: [String], $status: MediaStatus, $format: MediaFormat,
+      $seasonYear: Int
     ) {
       Page(page: $page, perPage: $perPage) {
         pageInfo { currentPage hasNextPage lastPage perPage total }
         media(
           type: ANIME, sort: $sort, isAdult: $isAdult,
-          genre_in: $genres, status: $status, format: $format, seasonYear: $seasonYear
+          genre_in: $genres, status: $status, format: $format,
+          seasonYear: $seasonYear
         ) {
           id title { romaji english native } coverImage { large medium }
+          bannerImage
           format status episodes averageScore genres
           startDate { year }
         }
@@ -204,4 +236,74 @@ export async function browseAnime(options: {
     hasNextPage: pageData.pageInfo.hasNextPage,
     pageInfo: pageData.pageInfo,
   };
+}
+
+interface CalendarEntry {
+  id: number;
+  title: { romaji: string; english: string | null };
+  coverImage: { large: string; medium: string };
+  episodes: number | null;
+  nextAiringEpisode: { airingAt: number; episode: number } | null;
+}
+
+export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> {
+  const query = `
+    query ($start: Int, $end: Int) {
+      Page(perPage: 100) {
+        airingSchedules(
+          airingAt_greater: $start,
+          airingAt_lesser: $end
+        ) {
+          episode
+          airingAt
+          media {
+            id
+            title { romaji english }
+            coverImage { large medium }
+            episodes
+          }
+        }
+      }
+    }
+  `;
+
+  const now = Math.floor(Date.now() / 1000);
+  const weekLater = now + 7 * 24 * 60 * 60;
+
+  const data = await anilistQuery<any>(query, { start: now, end: weekLater });
+  const schedules = data.Page?.airingSchedules ?? [];
+
+  const calendar = new Map<string, CalendarEntry[]>();
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  const mediaMap = new Map<number, CalendarEntry>();
+
+  schedules.forEach((schedule: any) => {
+    const anime = schedule.media;
+    if (!anime) return;
+
+    const airingDate = new Date(schedule.airingAt * 1000);
+    const dayIndex = airingDate.getDay();
+    const dayName = days[dayIndex];
+
+    if (!mediaMap.has(anime.id)) {
+      mediaMap.set(anime.id, {
+        id: anime.id,
+        title: anime.title,
+        coverImage: anime.coverImage,
+        episodes: anime.episodes,
+        nextAiringEpisode: {
+          airingAt: schedule.airingAt,
+          episode: schedule.episode,
+        },
+      });
+    }
+
+    if (!calendar.has(dayName)) {
+      calendar.set(dayName, []);
+    }
+    calendar.get(dayName)!.push(mediaMap.get(anime.id)!);
+  });
+
+  return calendar;
 }

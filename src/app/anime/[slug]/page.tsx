@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, use, Suspense } from 'react';
+import { useState, useEffect, use, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import EpisodeList from '@/components/EpisodeList';
 import type { AnimeDetail, AniworldSeason } from '@/types';
 import { toSlug } from '@/lib/slug';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { sanitizeHtml } from '@/lib/sanitize';
+import { useLanguage } from '@/hooks/useLanguage';
 
 function AnimeDetailContent({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
@@ -17,8 +18,11 @@ function AnimeDetailContent({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [aniworldLoading, setAniworldLoading] = useState(true);
   const [aniworldSlug, setAniworldSlug] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const descRef = useRef<HTMLDivElement>(null);
 
   const { add, remove, isInWatchlist, getEntry } = useWatchlist();
+  const { language } = useLanguage();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -27,15 +31,14 @@ function AnimeDetailContent({ slug }: { slug: string }) {
   useEffect(() => {
     if (!animeId) { setLoading(false); return; }
 
-    fetch(`/api/anilist/search?q=${encodeURIComponent(slug.replace(/-/g, ' '))}`)
+    fetch(`/api/anilist/search?id=${animeId}`)
       .then(r => r.json())
       .then((searchData) => {
-        const exact = (searchData.results ?? []).find((a: any) => a.id === animeId);
-        setAnime(exact ?? searchData.results?.[0] ?? null);
+        setAnime(searchData.results?.[0] ?? null);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [animeId, slug]);
+  }, [animeId]);
 
   useEffect(() => {
     if (!anime) return;
@@ -58,15 +61,24 @@ function AnimeDetailContent({ slug }: { slug: string }) {
     }
 
     const title = anime.title.romaji;
+    const englishTitle = anime.title.english;
     const year = anime.year;
 
-    fetch(`/api/aniworld/find?title=${encodeURIComponent(title)}${year ? `&year=${year}` : ''}`)
+    fetch(`/api/aniworld/find?title=${encodeURIComponent(title)}${year ? `&year=${year}` : ''}${englishTitle ? `&english=${encodeURIComponent(englishTitle)}` : ''}`)
       .then(r => r.json())
       .then((data) => {
         if (data.found && data.seasons?.length > 0) {
           setAniworldSlug(data.slug);
           setSeasons(data.seasons);
           localStorage.setItem(`aniworldSlug:${anime.id}`, data.slug);
+          
+          // Also update watchlist if this anime is in watchlist
+          const watchlistData = JSON.parse(localStorage.getItem('watchlist') ?? '[]');
+          const entry = watchlistData.find((e: any) => e.animeId === anime.id);
+          if (entry) {
+            entry.aniworldSlug = data.slug;
+            localStorage.setItem('watchlist', JSON.stringify(watchlistData));
+          }
         }
       })
       .catch(() => {})
@@ -85,7 +97,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
     );
   }
 
-  const title = anime.title.english ?? anime.title.romaji;
+const title = anime.title.english ?? anime.title.romaji;
   const displaySlug = toSlug(title);
   const inWatchlist = isInWatchlist(anime.id);
   const currentEntry = getEntry(anime.id);
@@ -105,9 +117,35 @@ function AnimeDetailContent({ slug }: { slug: string }) {
     }
   };
 
-  const statusLabel = currentEntry?.status === 'WATCHING' ? 'Watching'
-    : currentEntry?.status === 'COMPLETED' ? 'Completed'
-    : 'Plan to Watch';
+  const getStatusLabel = () => {
+    if (currentEntry?.status === 'WATCHING') {
+      return language === 'de' ? 'Anschauen' : 'Watching';
+    }
+    if (currentEntry?.status === 'COMPLETED') {
+      return language === 'de' ? 'Abgeschlossen' : 'Completed';
+    }
+    return language === 'de' ? 'Später ansehen' : 'Plan to Watch';
+  };
+
+  const getWatchButtonLabel = () => {
+    if (!currentEntry) {
+      return language === 'de' ? 'Jetzt ansehen' : 'Watch Now';
+    }
+    if (currentEntry.status === 'COMPLETED') {
+      return language === 'de' ? 'Erneut anschauen' : 'Watch Again';
+    }
+    const ep = currentEntry.currentEpisode ?? 1;
+    return language === 'de' ? `Weiterschauen E${ep}` : `Continue E${ep}`;
+  };
+
+  const watchSeason = currentEntry?.currentSeason ?? (() => {
+    const seasonMatch = title.match(/(?:Season\s*|Part\s*)(\d+)/i);
+    return seasonMatch ? parseInt(seasonMatch[1]) : 1;
+  })();
+
+  const watchEpisode = currentEntry?.currentEpisode ?? 1;
+
+  const statusLabel = getStatusLabel();
 
   return (
     <div className="relative">
@@ -152,7 +190,13 @@ function AnimeDetailContent({ slug }: { slug: string }) {
               {anime.year && <span>• {anime.year}</span>}
             </div>
 
-            <div className="mb-4">
+            <div className="mb-4 flex gap-3">
+              <a
+                href={`/watch/${displaySlug}/${watchSeason}/${watchEpisode}?id=${anime.id}`}
+                className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-base font-bold transition"
+              >
+                {getWatchButtonLabel()}
+              </a>
               <button
                 onClick={handleWatchlistToggle}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
@@ -161,22 +205,34 @@ function AnimeDetailContent({ slug }: { slug: string }) {
                     : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white'
                 }`}
               >
-                {inWatchlist ? `✓ ${statusLabel}` : '+ Watchlist'}
+                {inWatchlist ? `✓ ${statusLabel}` : (language === 'de' ? '+ Merkliste' : '+ Watchlist')}
               </button>
             </div>
 
             {anime.description && (
-              <div
-                className="text-gray-300 leading-relaxed max-w-3xl"
-                dangerouslySetInnerHTML={{ __html: sanitizeHtml(anime.description) }}
-              />
+              <div className="relative">
+                <div
+                  className="text-gray-300 leading-relaxed max-w-3xl"
+                  style={{ maxHeight: isExpanded ? 'none' : '5.5em', overflow: 'hidden' }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtml(anime.description) }}
+                />
+                {!isExpanded && (
+                  <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent pointer-events-none" />
+                )}
+                <button
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="text-purple-400 hover:text-purple-300 text-sm mt-1 relative z-10"
+                >
+                  {isExpanded ? 'Show less' : 'Show more'}
+                </button>
+              </div>
             )}
           </div>
         </div>
 
         <div className="mt-8">
           <h2 className="text-xl font-bold text-white mb-4">
-            Episodes {aniworldLoading && <span className="text-sm font-normal text-gray-400">(checking availability...)</span>}
+            {language === 'de' ? 'Episoden' : 'Episodes'} {aniworldLoading && <span className="text-sm font-normal text-gray-400">({language === 'de' ? 'Verfügbarkeit wird geprüft...' : 'checking availability...'})</span>}
           </h2>
           {aniworldLoading ? (
             <div className="text-gray-400 py-8 text-center">Loading episodes...</div>
@@ -187,6 +243,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
               aniworldSlug={aniworldSlug}
               animeId={anime.id}
               seasons={seasons}
+              defaultSeason={watchSeason}
             />
           )}
         </div>

@@ -21,9 +21,10 @@ export async function GET(
     return NextResponse.json({ seasons, available: seasons.length > 0 }, {
       headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=7200' },
     });
-  } catch {
+  } catch (error) {
+    console.error('[aniworld/series] Error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch series' },
+      { error: error instanceof Error ? error.message : 'Failed to fetch series', available: false },
       { status: 500 },
     );
   }

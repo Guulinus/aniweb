@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useLanguage } from '@/hooks/useLanguage';
 
 interface GenreFilterProps {
   selectedGenres: string[];
@@ -8,6 +9,7 @@ interface GenreFilterProps {
 }
 
 export default function GenreFilter({ selectedGenres, onToggle }: GenreFilterProps) {
+  const { language } = useLanguage();
   const [genres, setGenres] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -18,7 +20,7 @@ export default function GenreFilter({ selectedGenres, onToggle }: GenreFilterPro
       .catch(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="text-gray-400 text-sm">Loading genres...</div>;
+  if (loading) return <div className="text-gray-400 text-sm">{language === 'de' ? 'Genres werden geladen...' : 'Loading genres...'}</div>;
 
   return (
     <div className="flex flex-wrap gap-2">

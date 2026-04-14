@@ -2,295 +2,132 @@ import NodeCache from 'node-cache';
 import type { AniworldSeason, StreamLink } from '@/types';
 
 const cache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
-
 const BASE_URL = 'https://aniworld.to';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
-interface SearchResult {
-  title: string;
-  slug: string;
-  description: string;
-  cover: string;
-  productionYear: string;
-}
-
-const BROWSER_HEADERS = {
+const BROWSER_HEADERS: Record<string, string> = {
   'User-Agent': USER_AGENT,
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Connection': 'keep-alive',
-  'Upgrade-Insecure-Requests': '1',
-  'Sec-Fetch-Dest': 'document',
-  'Sec-Fetch-Mode': 'navigate',
-  'Sec-Fetch-Site': 'none',
-  'Sec-Fetch-User': '?1',
-  'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-  'Sec-Ch-Ua-Mobile': '?0',
-  'Sec-Ch-Ua-Platform': '"Windows"',
 };
 
-async function fetchHtml(url: string, retries = 2): Promise<string | null> {
+async function fetchHtml(url: string): Promise<string | null> {
   const cached = cache.get<string>(url);
   if (cached) return cached;
-
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(url, {
-        headers: BROWSER_HEADERS,
-        redirect: 'follow',
-        signal: AbortSignal.timeout(20000),
-      });
-
-      console.log(`[aniworld] fetchHtml: ${url} -> status ${res.status}, attempt ${attempt + 1}`);
-
-      if (res.status === 403 || res.status === 429) {
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-          continue;
-        }
-        console.log(`[aniworld] blocked after ${retries + 1} attempts`);
-        return null;
-      }
-
-      if (!res.ok) return null;
-      const html = await res.text();
-
-      // Check if this is a Cloudflare challenge page
-      if (html.includes('cf-chl-bypass') || html.includes('cf-turnstile') || html.includes('__cf_chl') || html.includes('Just a moment')) {
-        console.log(`[aniworld] Cloudflare challenge detected`);
-        if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
-          continue;
-        }
-        return null;
-      }
-
-      cache.set(url, html);
-      return html;
-    } catch (err) {
-      console.log(`[aniworld] fetchHtml error: ${err}`);
-      if (attempt < retries) {
-        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-        continue;
-      }
-      return null;
-    }
-  }
-
-  return null;
-}
-
-async function fetchJson(url: string, method: string = 'GET', body?: URLSearchParams): Promise<any> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: {
-          'User-Agent': USER_AGENT,
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json, text/plain, */*',
-          'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Origin': BASE_URL,
-          'Referer': BASE_URL + '/',
-        },
-        body: body ? body.toString() : undefined,
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (res.status === 403 || res.status === 429) {
-        if (attempt < 1) {
-          await new Promise(r => setTimeout(r, 3000));
-          continue;
-        }
-        return null;
-      }
-
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      if (attempt < 1) {
-        await new Promise(r => setTimeout(r, 2000));
-        continue;
-      }
-      return null;
-    }
-  }
-  return null;
-}
-
-export async function searchAniworld(query: string): Promise<SearchResult[]> {
-  const data = await fetchJson(
-    `${BASE_URL}/ajax/search`,
-    'POST',
-    new URLSearchParams({ keyword: query }),
-  );
-  if (!data || !Array.isArray(data)) return [];
-
-  return data
-    .filter((item: any) => item.link?.startsWith('/anime/stream/'))
-    .map((item: any) => ({
-      title: item.title.replace(/<\/?em>/g, ''),
-      slug: item.link.replace('/anime/stream/', ''),
-      description: item.description ?? '',
-      cover: item.cover ?? '',
-      productionYear: item.productionYear ?? '',
-    }));
-}
-
-function extractYear(yearStr: string): number {
-  const match = yearStr.match(/\d{4}/);
-  return match ? parseInt(match[0]) : 0;
+  
+  const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(15000) });
+  if (!res.ok) return null;
+  const html = await res.text();
+  cache.set(url, html);
+  return html;
 }
 
 export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]> {
-  const html = await fetchHtml(`${BASE_URL}/anime/stream/${slug}`);
+  const html = await fetchHtml(BASE_URL + '/anime/stream/' + slug);
   if (!html) return [];
 
-  const seasonNumbers = new Set<number>();
-  const seasonMatches = html.matchAll(/staffel-(\d+)/g);
-  for (const match of seasonMatches) {
-    seasonNumbers.add(parseInt(match[1]));
+  const seasons = new Set<number>();
+  for (const m of html.matchAll(/staffel-(\d+)/g)) seasons.add(parseInt(m[1]));
+
+  const result: AniworldSeason[] = [];
+  for (const sn of [...seasons].sort((a, b) => a - b)) {
+    const shtml = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/staffel-' + sn);
+    if (!shtml) continue;
+
+    const episodes: { number: number; title: string; slug: string }[] = [];
+    const pattern = /<meta[^>]*itemprop="episodeNumber"[^>]*content="(\d+)"[^>]*>[\s\S]*?<td[^>]*class="seasonEpisodeTitle"[^>]*>[\s\S]*?<strong>([^<]+)<\/strong>/g;
+    
+    for (const m of shtml.matchAll(pattern)) {
+      episodes.push({ number: parseInt(m[1]), title: m[2].trim(), slug: '' });
+    }
+    
+    if (episodes.length) result.push({ seasonNumber: sn, episodes: episodes.sort((a, b) => a.number - b.number) });
   }
-
-  const sortedSeasons = [...seasonNumbers].sort((a, b) => a - b);
-
-  const seasonResults = await Promise.all(
-    sortedSeasons.map(async (seasonNum) => {
-      const seasonHtml = await fetchHtml(`${BASE_URL}/anime/stream/${slug}/staffel-${seasonNum}`);
-      if (!seasonHtml) return null;
-
-      const episodePattern = /episode-(\d+)/g;
-      const episodeNumbers: number[] = [];
-      for (const match of seasonHtml.matchAll(episodePattern)) {
-        episodeNumbers.push(parseInt(match[1]));
-      }
-
-      if (episodeNumbers.length === 0) return null;
-
-      const maxEpisode = Math.max(...episodeNumbers);
-      const episodes = [];
-      for (let i = 1; i <= maxEpisode; i++) {
-        episodes.push({
-          number: i,
-          title: `Episode ${i}`,
-          slug: '',
-        });
-      }
-      return {
-        seasonNumber: seasonNum,
-        episodes,
-      };
-    })
-  );
-
-  return seasonResults.filter((s): s is NonNullable<typeof s> => s !== null);
+  return result;
 }
 
-export async function resolveRedirect(redirectUrl: string): Promise<string> {
+export async function resolveRedirect(url: string): Promise<string> {
   try {
-    const res = await fetch(redirectUrl, {
-      redirect: 'manual',
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location');
-      if (location) return location;
-    }
-
-    // If no redirect, return original
-    return redirectUrl;
-  } catch {
-    return redirectUrl;
-  }
+    const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, redirect: 'manual', signal: AbortSignal.timeout(10000) });
+    if (res.status >= 300 && res.status < 400) return res.headers.get('location') || url;
+  } catch {}
+  return url;
 }
 
 export async function getEpisodeStreamLinks(slug: string, season: number, episode: number): Promise<StreamLink[]> {
-  const url = `${BASE_URL}/anime/stream/${slug}/staffel-${season}/episode-${episode}`;
-  const html = await fetchHtml(url);
+  const html = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/staffel-' + season + '/episode-' + episode);
   if (!html) return [];
 
   const links: StreamLink[] = [];
   const seen = new Set<string>();
+  const pattern = /<li[^>]*data-lang-key="(\d+)"[^>]*data-link-id="(\d+)"[^>]*>/g;
 
-  const liPattern = /<li[^>]*data-lang-key="(\d+)"[^>]*data-link-id="(\d+)"[^>]*data-link-target="\/redirect\/(\d+)"[^>]*>([\s\S]*?)<\/li>/g;
-
-  for (const match of html.matchAll(liPattern)) {
-    const langKey = match[1];
-    const redirectId = match[3];
-    const liContent = match[4];
-
-    // lang-key: 1=GerDub, 2=GerSub, 3=EngSub - only German
-    if (langKey !== '1' && langKey !== '2') continue;
-
-    let hoster = 'unknown';
-    const iconMatch = liContent.match(/<i class="icon ([^"]+)"/);
-    if (iconMatch) {
-      hoster = iconMatch[1].toLowerCase();
-    }
-
-    const language = langKey === '1' ? 'Ger-Dub' : 'Ger-Sub';
-
-    const linkKey = `${hoster}-${langKey}`;
+  for (const m of html.matchAll(pattern)) {
+    if (m[1] !== '1' && m[1] !== '2') continue;
+    const key = m[2];
+    const liStart = m.index || 0;
+    const liEnd = html.indexOf('</li>', liStart);
+    const liContent = html.slice(liStart, liEnd > 0 ? liEnd + 5 : liStart + 500);
+    const hoster = liContent.match(/<i class="icon ([^">]+)"/)?.[1]?.toLowerCase() || 'unknown';
+    const lang = m[1] === '1' ? 'Ger-Dub' : 'Ger-Sub';
+    const linkKey = hoster + '-' + m[1];
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
-
-    // Resolve the redirect to get the actual embed URL
-    const redirectUrl = `${BASE_URL}/redirect/${redirectId}`;
-    const embedUrl = await resolveRedirect(redirectUrl);
-
-    links.push({
-      hoster,
-      url: embedUrl,
-      language,
-    });
+    links.push({ hoster, url: await resolveRedirect(BASE_URL + '/redirect/' + key), language: lang });
   }
-
   return links;
 }
 
-export async function findAniworldSeries(title: string, year: number | null): Promise<{
-  found: boolean;
-  slug: string | null;
-  aniworldTitle: string | null;
-  seasons: AniworldSeason[];
-}> {
-  const variants = new Set<string>();
-  variants.add(title);
-
-  const words = title.split(/[\s:]+/).slice(0, 3).join(' ');
-  if (words.length > 2) variants.add(words);
-
-  const beforeColon = title.split(/[:\-–]/)[0].trim();
-  if (beforeColon.length > 2) variants.add(beforeColon);
-
-  const cleaned = title
-    .replace(/\s*(Movie|Film|Part|Season|Arc|Ova|Special|Oav)\s*\d*[:\s].*$/i, '')
-    .replace(/\s*\(\d{4}\)\s*$/, '')
-    .trim();
-  if (cleaned.length > 2) variants.add(cleaned);
-
-  for (const variant of variants) {
-    const results = await searchAniworld(variant);
-    if (!results.length) continue;
-
-    for (const result of results) {
-      const resultYear = extractYear(result.productionYear);
-      const yearMatch = !year || !resultYear || Math.abs(resultYear - year) <= 2;
-
-      if (yearMatch) {
-        const seasons = await getAniworldSeasons(result.slug);
-        return {
-          found: seasons.length > 0,
-          slug: result.slug,
-          aniworldTitle: result.title,
-          seasons,
-        };
+export async function findAniworldSeries(title: string, year: number | null, englishTitle?: string | null) {
+  const allTitles = [title];
+  if (englishTitle) allTitles.push(englishTitle);
+  
+  const searchTermsSet = new Set<string>();
+  
+  for (const t of allTitles) {
+    const baseTitle = t.split(/[-:]/)[0].trim();
+    const noYear = t.replace(/\s*\(\d{4}\)\s*/g, ' ').replace(/['"]/g, '').replace(/\s+/g, ' ').trim();
+    
+    searchTermsSet.add(baseTitle);
+    searchTermsSet.add(noYear);
+    searchTermsSet.add(noYear.replace(/&/g, 'and'));
+    if (baseTitle.includes(' ')) {
+      searchTermsSet.add(baseTitle.split(' ').slice(0, 2).join(' '));
+    }
+    searchTermsSet.add('JoJo');
+  }
+  
+  const uniqueTerms = [...searchTermsSet].filter(t => t.length >= 2);
+  
+  for (const searchTerm of uniqueTerms) {
+    if (searchTerm.length < 2) continue;
+    
+    try {
+      const searchData = await fetch(BASE_URL + '/ajax/search', {
+        method: 'POST',
+        headers: { ...BROWSER_HEADERS, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'keyword=' + encodeURIComponent(searchTerm)
+      });
+      const text = await searchData.text();
+      if (!text || text.length < 5) continue;
+      
+      let results;
+      try {
+        results = JSON.parse(text);
+      } catch {
+        continue;
       }
+      if (!Array.isArray(results) || results.length === 0) continue;
+      
+      for (const r of results) {
+        if (!r.link || !r.link.includes('/anime/stream/')) continue;
+        const slug = r.link.replace('/anime/stream/', '');
+        const seasons = await getAniworldSeasons(slug);
+        if (seasons.length) return { found: true, slug, aniworldTitle: r.title, seasons };
+      }
+    } catch {
+      continue;
     }
   }
-
   return { found: false, slug: null, aniworldTitle: null, seasons: [] };
 }

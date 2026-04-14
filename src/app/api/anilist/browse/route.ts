@@ -33,7 +33,8 @@ export async function GET(request: NextRequest) {
       year: year && !isNaN(year) ? year : undefined,
     });
     return NextResponse.json(data, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
-  } catch {
+  } catch (e) {
+    console.error('Browse API error:', e);
     return NextResponse.json(
       { error: 'Failed to browse anime' },
       { status: 500 },

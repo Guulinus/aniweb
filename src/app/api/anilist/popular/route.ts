@@ -1,13 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPopularAnime } from '@/lib/anilist';
+import { getPopularAnime as getPopularAnimeApi } from '@/lib/anilist';
+import { getPopularAnime as getPopularAnimeDb } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
-  const page = parseInt(request.nextUrl.searchParams.get('page') ?? '1');
-  const perPage = parseInt(request.nextUrl.searchParams.get('perPage') ?? '20');
+  const useDb = request.nextUrl.searchParams.get('db') !== 'false';
+  const perPage = Math.min(parseInt(request.nextUrl.searchParams.get('perPage') ?? '20'), 50);
 
   try {
-    const data = await getPopularAnime(isNaN(page) ? 1 : page, Math.min(isNaN(perPage) ? 20 : perPage, 50));
-    return NextResponse.json(data, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
+    // Use local DB first for speed
+    if (useDb) {
+      const dbResults = getPopularAnimeDb(perPage, 0);
+      if (dbResults.length > 0) {
+        return NextResponse.json({
+          results: dbResults.map(a => ({
+            id: a.id,
+            title: { romaji: a.title_romaji, english: a.title_english, native: a.title_native },
+            coverImage: { large: a.cover_image, medium: a.cover_image },
+            bannerImage: a.banner_image,
+            format: a.format,
+            status: a.status,
+            episodes: a.episodes,
+            averageScore: a.average_score,
+            year: a.year,
+            genres: a.genres ? JSON.parse(a.genres) : [],
+            description: a.description,
+          })),
+          hasNextPage: false,
+          source: 'local'
+        }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400' } });
+      }
+    }
+    
+    // Fall back to AniList
+    const data = await getPopularAnimeApi(1, perPage);
+    return NextResponse.json({ ...data, source: 'anilist' }, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
   } catch {
     return NextResponse.json(
       { error: 'Failed to fetch popular anime' },

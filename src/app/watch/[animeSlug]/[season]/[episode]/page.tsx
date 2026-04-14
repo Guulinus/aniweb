@@ -6,6 +6,7 @@ import Link from 'next/link';
 import VideoPlayer from '@/components/VideoPlayer';
 import type { StreamLink } from '@/types';
 import { useWatchlist } from '@/hooks/useWatchlist';
+import { useLanguage } from '@/hooks/useLanguage';
 
 function safeParseJSON(str: string, fallback: any) {
   try {
@@ -16,7 +17,12 @@ function safeParseJSON(str: string, fallback: any) {
 }
 
 function WatchContent({ animeSlug, season, episode }: { animeSlug: string; season: string; episode: string }) {
+  const { language } = useLanguage();
   const searchParams = useSearchParams();
+  
+  const notFoundError = language === 'de' ? 'Dieses Anime konnte nicht auf Aniworld gefunden werden' : 'Could not find this anime on Aniworld';
+  const noStreamError = language === 'de' ? 'Kein deutscher Stream für dieses Episoden gefunden' : 'No German stream found for this episode';
+  const loadError = language === 'de' ? 'Stream konnte nicht geladen werden' : 'Failed to load stream';
 
   const animeId = parseInt(searchParams.get('id') ?? '0');
   const episodeTitle = searchParams.get('title') ?? `Episode ${episode}`;
@@ -27,11 +33,12 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
   const [error, setError] = useState<string | null>(null);
   const [animeTitle, setAnimeTitle] = useState<string | null>(null);
   const [coverImage, setCoverImage] = useState<string>('');
+  const [seekTo, setSeekTo] = useState<number | undefined>(undefined);
 
   const animeTitleRef = useRef(animeTitle);
   const coverImageRef = useRef(coverImage);
 
-  const { add, isInWatchlist, getEntry, updateProgress } = useWatchlist();
+  const { add, isInWatchlist, getEntry, updateProgress, updateStatus } = useWatchlist();
 
   const seasonNum = parseInt(season);
   const episodeNum = parseInt(episode);
@@ -67,16 +74,32 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
     setLoading(true);
 
     const resolveSlug = async (): Promise<string | null> => {
+      // 1. Use awSlug from URL if provided
       if (awSlugFromUrl) return awSlugFromUrl;
+      
+      // 2. Check localStorage cache
       const cached = localStorage.getItem(`aniworldSlug:${animeId}`);
       if (cached) return cached;
+      
+      // 3. Try to find via API search
+      if (animeId) {
+        try {
+          const res = await fetch(`/api/aniworld/search?id=${animeId}`);
+          const data = await res.json();
+          if (data.slug) {
+            localStorage.setItem(`aniworldSlug:${animeId}`, data.slug);
+            return data.slug;
+          }
+        } catch {}
+      }
+      
       return null;
     };
 
     resolveSlug().then((slug) => {
       if (cancelled) return;
       if (!slug) {
-        setError('Could not find this anime on Aniworld');
+        setError(notFoundError);
         setLoading(false);
         return;
       }
@@ -88,6 +111,30 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
           if (cancelled) return;
           if (data.available && data.links?.length > 0) {
             setLinks(data.links);
+
+            // Use the same slug from the URL path that we use for saving
+            const pathSlug = animeSlug;
+            const savedKey = `watchPosition:${animeId}:${pathSlug}:${seasonNum}:${episodeNum}`;
+            console.log('[Watch] Looking for saved position with key:', savedKey);
+            const savedData = localStorage.getItem(savedKey);
+            console.log('[Watch] Saved data found:', savedData);
+            if (savedData) {
+              try {
+                const parsed = JSON.parse(savedData);
+                console.log('[Watch] Parsed saved data:', parsed);
+                const timeSinceSave = Date.now() - parsed.updated;
+                const progress = parsed.time / parsed.duration;
+                console.log('[Watch] Time since save:', timeSinceSave, 'progress:', progress);
+                if (timeSinceSave < 86400000 && parsed.time > 0 && progress < 0.9) {
+                  console.log('[Watch] Setting seekTo to:', parsed.time);
+                  setSeekTo(parsed.time);
+                } else {
+                  console.log('[Watch] Skipping - too old or at end');
+                }
+              } catch (e) {
+                console.log('[Watch] Error parsing saved data:', e);
+              }
+            }
 
             const history = safeParseJSON(localStorage.getItem('watchHistory') ?? '[]', []);
             const entry = { animeSlug, animeId, season: seasonNum, episode: episodeNum, title: animeTitleRef.current, timestamp: Date.now() };
@@ -101,9 +148,19 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
             if (isInWatchlist(animeId)) {
               const existing = getEntry(animeId);
               if (existing && existing.status === 'PLANNING') {
-                existing.status = 'WATCHING';
+                updateStatus(animeId, 'WATCHING');
               }
               updateProgress(animeId, episodeNum);
+              // Manually update aniworldSlug, lastWatched, currentSeason, and coverImage in localStorage
+              try {
+                const current = JSON.parse(localStorage.getItem('watchlist') ?? '[]');
+                const updated = current.map((e: any) => 
+                  e.animeId === animeId 
+                    ? { ...e, aniworldSlug: slug, lastWatched: Date.now(), currentSeason: seasonNum, coverImage: coverImageRef.current || e.coverImage } 
+                    : e
+                );
+                localStorage.setItem('watchlist', JSON.stringify(updated));
+              } catch {}
             } else {
               add({
                 animeId,
@@ -112,14 +169,17 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
                 coverImage: coverImageRef.current,
                 status: 'WATCHING',
                 currentEpisode: episodeNum,
+                aniworldSlug: slug ?? undefined,
+                lastWatched: Date.now(),
+                currentSeason: seasonNum,
               });
             }
           } else {
-            setError('No German stream found for this episode');
+            setError(noStreamError);
           }
         })
         .catch(() => {
-          if (!cancelled) setError('Failed to load stream');
+          if (!cancelled) setError(loadError);
         })
         .finally(() => {
           if (!cancelled) setLoading(false);
@@ -158,7 +218,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
           </div>
         </div>
       ) : (
-        <VideoPlayer links={links} episodeTitle={episodeTitle} />
+        <VideoPlayer links={links} episodeTitle={episodeTitle} animeId={animeId} seekTo={seekTo} />
       )}
 
       <div className="flex justify-between mt-6">

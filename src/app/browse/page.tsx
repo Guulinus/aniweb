@@ -4,32 +4,52 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import AnimeGrid from '@/components/AnimeGrid';
 import GenreFilter from '@/components/GenreFilter';
+import { SkeletonGrid } from '@/components/Skeleton';
+import { useLanguage } from '@/hooks/useLanguage';
 import type { AnimeBasic } from '@/types';
 
-const SORT_OPTIONS = [
-  { value: 'POPULARITY_DESC', label: 'Most Popular' },
-  { value: 'SCORE_DESC', label: 'Highest Score' },
-  { value: 'TRENDING_DESC', label: 'Trending' },
-  { value: 'FAVOURITES_DESC', label: 'Most Favorites' },
-  { value: 'TITLE_ROMAJI', label: 'Title A-Z' },
-];
-
-const STATUS_OPTIONS = [
-  { value: '', label: 'All' },
-  { value: 'RELEASING', label: 'Airing' },
-  { value: 'FINISHED', label: 'Finished' },
-  { value: 'NOT_YET_RELEASED', label: 'Upcoming' },
-];
+function useTranslations() {
+  const { language } = useLanguage();
+  return {
+    sortOptions: [
+      { value: 'POPULARITY_DESC', label: language === 'de' ? 'Beliebt' : 'Most Popular' },
+      { value: 'TRENDING_DESC', label: language === 'de' ? 'Trend' : 'Trending' },
+      { value: 'SCORE_DESC', label: language === 'de' ? 'Beste Bewertung' : 'Highest Score' },
+      { value: 'TITLE_ROMAJI', label: language === 'de' ? 'Titel A-Z' : 'Title A-Z' },
+    ],
+    statusOptions: [
+      { value: '', label: language === 'de' ? 'Alle' : 'All' },
+      { value: 'RELEASING', label: language === 'de' ? 'Laufend' : 'Airing' },
+      { value: 'FINISHED', label: language === 'de' ? 'Abgeschlossen' : 'Finished' },
+      { value: 'NOT_YET_RELEASED', label: language === 'de' ? 'Angekündigt' : 'Upcoming' },
+    ],
+    formatOptions: [
+      { value: '', label: language === 'de' ? 'Alle' : 'All' },
+      { value: 'TV', label: 'TV' },
+      { value: 'MOVIE', label: 'Movie' },
+      { value: 'OVA', label: 'OVA' },
+      { value: 'ONA', label: 'ONA' },
+    ],
+    browse: language === 'de' ? 'Durchsuchen' : 'Browse',
+    sortBy: language === 'de' ? 'Sortieren nach' : 'Sort By',
+    status: language === 'de' ? 'Status' : 'Status',
+    format: language === 'de' ? 'Format' : 'Format',
+    page: language === 'de' ? 'Seite' : 'Page',
+    nextPage: language === 'de' ? 'Nächste' : 'Next',
+    previousPage: language === 'de' ? 'Vorherige' : 'Previous',
+  };
+}
 
 function BrowseContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
+  const { sortOptions, statusOptions, formatOptions, browse, sortBy, status: statusLabel, format: formatLabel, page: pageLabel, nextPage, previousPage } = useTranslations();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [status, setStatus] = useState(searchParams.get('status') ?? '');
+  const [format, setFormat] = useState('');
   const [sort, setSort] = useState(searchParams.get('sort') ?? 'POPULARITY_DESC');
 
   const fetchAnime = useCallback(async (pageNum: number) => {
@@ -39,6 +59,7 @@ function BrowseContent() {
     params.set('perPage', '20');
     params.set('sort', sort);
     if (status) params.set('status', status);
+    if (format) params.set('format', format);
     selectedGenres.forEach(g => params.append('genre', g));
 
     try {
@@ -51,7 +72,7 @@ function BrowseContent() {
     } finally {
       setLoading(false);
     }
-  }, [sort, status, selectedGenres]);
+  }, [sort, status, format, selectedGenres]);
 
   useEffect(() => { fetchAnime(page); }, [fetchAnime, page]);
 
@@ -62,19 +83,9 @@ function BrowseContent() {
     setPage(1);
   };
 
-  const handleSortChange = (newSort: string) => {
-    setSort(newSort);
-    setPage(1);
-  };
-
-  const handleStatusChange = (newStatus: string) => {
-    setStatus(newStatus);
-    setPage(1);
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-white mb-6">Browse Anime</h1>
+      <h1 className="text-3xl font-bold text-white mb-6">{browse}</h1>
 
       <div className="space-y-4 mb-8">
         <div>
@@ -82,28 +93,41 @@ function BrowseContent() {
           <GenreFilter selectedGenres={selectedGenres} onToggle={handleGenreToggle} />
         </div>
 
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap gap-4 items-end">
           <div>
-            <label className="text-sm font-semibold text-gray-400 block mb-1">Status</label>
+            <label className="text-sm font-semibold text-gray-400 block mb-1">{statusLabel}</label>
             <select
               value={status}
-              onChange={(e) => handleStatusChange(e.target.value)}
+              onChange={(e) => { setStatus(e.target.value); setPage(1); }}
               className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm"
             >
-              {STATUS_OPTIONS.map(opt => (
+              {statusOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="text-sm font-semibold text-gray-400 block mb-1">Sort By</label>
+            <label className="text-sm font-semibold text-gray-400 block mb-1">{formatLabel}</label>
             <select
-              value={sort}
-              onChange={(e) => handleSortChange(e.target.value)}
+              value={format}
+              onChange={(e) => { setFormat(e.target.value); setPage(1); }}
               className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm"
             >
-              {SORT_OPTIONS.map(opt => (
+              {formatOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold text-gray-400 block mb-1">{sortBy}</label>
+            <select
+              value={sort}
+              onChange={(e) => { setSort(e.target.value); setPage(1); }}
+              className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm"
+            >
+              {sortOptions.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
@@ -112,8 +136,8 @@ function BrowseContent() {
       </div>
 
       {loading ? (
-        <div className="text-center py-8 text-gray-400">Loading...</div>
-      ) : (
+        <SkeletonGrid count={20} />
+      ) : anime.length > 0 ? (
         <>
           <AnimeGrid anime={anime} />
           <div className="flex justify-center gap-4 mt-8">
@@ -122,18 +146,22 @@ function BrowseContent() {
               disabled={page === 1}
               className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
             >
-              Previous
+              {previousPage}
             </button>
-            <span className="px-4 py-2 text-gray-400">Page {page}</span>
+            <span className="px-4 py-2 text-gray-400">{pageLabel} {page}</span>
             <button
               onClick={() => setPage(p => p + 1)}
               disabled={!hasNextPage}
               className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
             >
-              Next
+              {nextPage}
             </button>
           </div>
         </>
+      ) : (
+        <div className="text-center py-16 text-gray-400">
+          <p>{loading ? 'Lädt...' : 'Keine Ergebnisse gefunden'}</p>
+        </div>
       )}
     </div>
   );

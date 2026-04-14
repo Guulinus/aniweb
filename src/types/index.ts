@@ -9,12 +9,15 @@ export interface AnimeBasic {
     large: string;
     medium: string;
   };
+  bannerImage?: string | null;
   format: string;
   status: string;
   episodes: number | null;
   averageScore: number | null;
   year: number | null;
   genres: string[];
+  description?: string | null;
+  episodeThumbnails?: Record<number, string> | null;
 }
 
 export interface AnimeDetail extends AnimeBasic {
@@ -82,4 +85,7 @@ export interface WatchlistEntry {
   currentEpisode?: number;
   totalEpisodes?: number | null;
   addedAt: number;
+  aniworldSlug?: string;
+  lastWatched?: number;
+  currentSeason?: number;
 }

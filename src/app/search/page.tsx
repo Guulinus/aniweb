@@ -1,35 +1,59 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useLanguage } from '@/hooks/useLanguage';
 import AnimeGrid from '@/components/AnimeGrid';
 import type { AnimeBasic } from '@/types';
+import { useState, useEffect } from 'react';
+
+const getSortOptions = (lang: string) => [
+  { value: 'POPULARITY_DESC', label: lang === 'de' ? 'Beliebt' : 'Most Popular' },
+  { value: 'TRENDING_DESC', label: lang === 'de' ? 'Trend' : 'Trending' },
+  { value: 'SCORE_DESC', label: lang === 'de' ? 'Beste Bewertung' : 'Highest Score' },
+  { value: 'TITLE_ROMAJI', label: lang === 'de' ? 'Titel A-Z' : 'Title A-Z' },
+];
 
 function SearchContent() {
+  const { language } = useLanguage();
   const searchParams = useSearchParams();
   const query = searchParams.get('q') ?? '';
   const [results, setResults] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [sort, setSort] = useState('POPULARITY_DESC');
+  const sortOptions = getSortOptions(language);
 
   useEffect(() => {
     if (!query) { setResults([]); setLoading(false); return; }
 
     setLoading(true);
-    fetch(`/api/anilist/search?q=${encodeURIComponent(query)}&page=${page}&perPage=20`)
+    fetch(`/api/anilist/search?q=${encodeURIComponent(query)}&page=${page}&perPage=20&sort=${sort}`)
       .then(r => r.json())
       .then(d => { setResults(d.results ?? []); setHasNextPage(d.hasNextPage ?? false); })
       .catch(() => setResults([]))
       .finally(() => setLoading(false));
-  }, [query, page]);
+  }, [query, page, sort]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-white mb-2">
         {query ? `Search results for "${query}"` : 'Search'}
       </h1>
-      {query && <p className="text-gray-400 mb-6">{results.length} results found</p>}
+      
+      <div className="flex items-center gap-4 mb-6">
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm"
+        >
+          {sortOptions.map((opt: any) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        {query && <span className="text-gray-400">{results.length} results</span>}
+      </div>
 
       {loading ? (
         <div className="text-center py-8 text-gray-400">Searching...</div>
@@ -54,12 +78,9 @@ function SearchContent() {
             </button>
           </div>
         </>
-      ) : (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-lg">No results found</p>
-          <p className="text-sm mt-2">Try a different search term</p>
-        </div>
-      )}
+      ) : query ? (
+        <div className="text-center py-8 text-gray-400">No results found</div>
+      ) : null}
     </div>
   );
 }
