@@ -46,7 +46,7 @@ export default function HistoryPage() {
         {history.length > 0 && (
           <button
             onClick={clearHistory}
-            className="text-sm text-gray-400 hover:text-white"
+            className="text-sm text-gray-400 hover:text-white focus-visible:text-white"
           >
             {language === 'de' ? 'Verlauf löschen' : 'Clear history'}
           </button>
@@ -68,7 +68,7 @@ export default function HistoryPage() {
               <Link
                 key={`${entry.animeId}-${entry.season}-${entry.episode}-${index}`}
                 href={`/watch/${entry.animeSlug}/${entry.season}/${entry.episode}?id=${entry.animeId}`}
-                className="grid grid-cols-4 gap-4 p-3 text-sm hover:bg-gray-700/50 transition"
+                className="grid grid-cols-4 gap-4 p-3 text-sm hover:bg-gray-700/50 focus-visible:bg-gray-700/50 transition"
               >
                 <div className="text-white">
                   {entry.season > 1 && `S${entry.season} `}E{entry.episode}

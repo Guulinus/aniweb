@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect, use, Suspense, useRef } from 'react';
+import { useState, useEffect, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import EpisodeList from '@/components/EpisodeList';
-import type { AnimeDetail, AniworldSeason } from '@/types';
+import RelatedAnime from '@/components/RelatedAnime';
+import RecommendationsRow from '@/components/RecommendationsRow';
+import StarRating from '@/components/StarRating';
+import type { AnimeDetail, AniworldSeason, RelatedMovie } from '@/types';
 import { toSlug } from '@/lib/slug';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { useLanguage } from '@/hooks/useLanguage';
+import { useToast } from '@/lib/ToastContext';
 
 function AnimeDetailContent({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
@@ -18,11 +22,15 @@ function AnimeDetailContent({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [aniworldLoading, setAniworldLoading] = useState(true);
   const [aniworldSlug, setAniworldSlug] = useState<string | null>(null);
+  const [mergedThumbnails, setMergedThumbnails] = useState<Record<number, string> | null>(null);
+  const [movies, setMovies] = useState<RelatedMovie[]>([]);
+  const [movieSlugs, setMovieSlugs] = useState<Record<number, { slug: string; season: number; episode: number }>>({});
   const [isExpanded, setIsExpanded] = useState(false);
   const descRef = useRef<HTMLDivElement>(null);
 
   const { add, remove, isInWatchlist, getEntry } = useWatchlist();
   const { language } = useLanguage();
+  const { showToast } = useToast();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -34,7 +42,28 @@ function AnimeDetailContent({ slug }: { slug: string }) {
     fetch(`/api/anilist/search?id=${animeId}`)
       .then(r => r.json())
       .then((searchData) => {
-        setAnime(searchData.results?.[0] ?? null);
+        if (searchData?.results?.[0]) {
+          const data = searchData.results[0];
+          setAnime(data);
+          // Extract movies from relations
+          if (data.relations?.edges) {
+            const movieEdges = data.relations.edges.filter(
+              (e: any) => e.node?.format === 'MOVIE'
+            );
+            if (movieEdges.length > 0) {
+              const movieList = movieEdges.map((e: any) => ({
+                id: e.node.id,
+                title: e.node.title,
+                coverImage: e.node.coverImage ?? null,
+                year: e.node.startDate?.year ?? null,
+                relationType: e.relationType,
+              }));
+              setMovies(movieList);
+            }
+          }
+        } else {
+          setAnime(null);
+        }
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -45,7 +74,8 @@ function AnimeDetailContent({ slug }: { slug: string }) {
 
     setAniworldLoading(true);
 
-    const cachedSlug = localStorage.getItem(`aniworldSlug:${anime.id}`);
+    let cachedSlug = null;
+    try { cachedSlug = localStorage.getItem(`aniworldSlug:${anime.id}`); } catch {}
     if (cachedSlug) {
       setAniworldSlug(cachedSlug);
       fetch(`/api/aniworld/series/${cachedSlug}`)
@@ -71,13 +101,13 @@ function AnimeDetailContent({ slug }: { slug: string }) {
           setAniworldSlug(data.slug);
           setSeasons(data.seasons);
           localStorage.setItem(`aniworldSlug:${anime.id}`, data.slug);
-          
-          // Also update watchlist if this anime is in watchlist
-          const watchlistData = JSON.parse(localStorage.getItem('watchlist') ?? '[]');
+          let watchlistRaw = '[]';
+          try { watchlistRaw = localStorage.getItem('watchlist') ?? '[]'; } catch {}
+          const watchlistData = JSON.parse(watchlistRaw);
           const entry = watchlistData.find((e: any) => e.animeId === anime.id);
           if (entry) {
             entry.aniworldSlug = data.slug;
-            localStorage.setItem('watchlist', JSON.stringify(watchlistData));
+            try { localStorage.setItem('watchlist', JSON.stringify(watchlistData)); } catch {}
           }
         }
       })
@@ -85,19 +115,82 @@ function AnimeDetailContent({ slug }: { slug: string }) {
       .finally(() => setAniworldLoading(false));
   }, [anime]);
 
+  // Fetch TMDB thumbnails when anime + seasons are ready
+  useEffect(() => {
+    if (!anime || seasons.length === 0) return;
+
+    const seasonNumbers = seasons.map(s => s.seasonNumber);
+    const romaji = anime.title.romaji;
+    const english = anime.title.english;
+
+    fetch(`/api/tmdb/thumbnails?romaji=${encodeURIComponent(romaji)}${english ? `&english=${encodeURIComponent(english)}` : ''}&seasons=${seasonNumbers.join(',')}`)
+      .then(r => r.json())
+      .then((data) => {
+        if (!data.thumbnails || Object.keys(data.thumbnails).length === 0) return;
+
+        // Merge: TMDB wins over AniList for overlapping indices
+        let globalOffset = 0;
+        const merged: Record<number, string> = { ...anime.episodeThumbnails };
+
+        for (const season of seasons) {
+          const tmdbSeason = data.thumbnails[season.seasonNumber] as Record<string, string> | undefined;
+          if (tmdbSeason) {
+            for (const epNum of Object.keys(tmdbSeason)) {
+              merged[globalOffset + parseInt(epNum)] = tmdbSeason[epNum];
+            }
+          }
+          globalOffset += season.episodes.length;
+        }
+
+        setMergedThumbnails(merged);
+      })
+      .catch(() => {});
+  }, [anime, seasons]);
+
+  // Fetch aniworld episode data for each movie
+  useEffect(() => {
+    if (movies.length === 0) return;
+    movies.forEach((m) => {
+      const searchTitle = m.title.english || m.title.romaji;
+      fetch(`/api/aniworld/find-movie?title=${encodeURIComponent(searchTitle)}${m.year ? `&year=${m.year}` : ''}`)
+        .then(r => r.json())
+        .then((data: any) => {
+          if (data.found && data.slug && data.season != null && data.episode != null) {
+            setMovieSlugs(prev => ({ ...prev, [m.id]: { slug: data.slug, season: data.season, episode: data.episode } }));
+          }
+        })
+        .catch(() => {});
+    });
+  }, [movies]);
+
   if (loading) {
-    return <div className="max-w-7xl mx-auto px-4 py-8 text-gray-400">Loading...</div>;
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-16">
+        <div className="animate-pulse space-y-6">
+          <div className="h-72 bg-gray-800 rounded-xl" />
+          <div className="flex gap-6">
+            <div className="w-40 h-60 bg-gray-800 rounded-lg flex-shrink-0" />
+            <div className="flex-1 space-y-4">
+              <div className="h-8 w-64 bg-gray-800 rounded" />
+              <div className="h-4 w-48 bg-gray-800 rounded" />
+              <div className="h-4 w-full bg-gray-800 rounded" />
+              <div className="h-4 w-3/4 bg-gray-800 rounded" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!anime) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-8 text-center text-gray-400">
+      <div className="max-w-7xl mx-auto px-4 py-16 text-center text-gray-400">
         <p className="text-lg">Anime not found</p>
       </div>
     );
   }
 
-const title = anime.title.english ?? anime.title.romaji;
+  const title = anime.title.english ?? anime.title.romaji;
   const displaySlug = toSlug(title);
   const inWatchlist = isInWatchlist(anime.id);
   const currentEntry = getEntry(anime.id);
@@ -105,6 +198,7 @@ const title = anime.title.english ?? anime.title.romaji;
   const handleWatchlistToggle = () => {
     if (inWatchlist) {
       remove(anime.id);
+      showToast(language === 'de' ? 'Von Merkliste entfernt' : 'Removed from watchlist', 'error');
     } else {
       add({
         animeId: anime.id,
@@ -114,128 +208,184 @@ const title = anime.title.english ?? anime.title.romaji;
         status: 'PLANNING',
         totalEpisodes: anime.episodes,
       });
+      showToast(language === 'de' ? 'Zur Merkliste hinzugefügt' : 'Added to watchlist', 'success');
     }
   };
 
   const getStatusLabel = () => {
-    if (currentEntry?.status === 'WATCHING') {
-      return language === 'de' ? 'Anschauen' : 'Watching';
-    }
-    if (currentEntry?.status === 'COMPLETED') {
-      return language === 'de' ? 'Abgeschlossen' : 'Completed';
-    }
+    if (currentEntry?.status === 'WATCHING') return language === 'de' ? 'Anschauen' : 'Watching';
+    if (currentEntry?.status === 'COMPLETED') return language === 'de' ? 'Abgeschlossen' : 'Completed';
     return language === 'de' ? 'Später ansehen' : 'Plan to Watch';
   };
 
   const getWatchButtonLabel = () => {
-    if (!currentEntry) {
-      return language === 'de' ? 'Jetzt ansehen' : 'Watch Now';
-    }
-    if (currentEntry.status === 'COMPLETED') {
-      return language === 'de' ? 'Erneut anschauen' : 'Watch Again';
-    }
-    const ep = currentEntry.currentEpisode ?? 1;
-    return language === 'de' ? `Weiterschauen E${ep}` : `Continue E${ep}`;
+    if (!currentEntry) return language === 'de' ? 'Jetzt ansehen' : 'Watch Now';
+    if (currentEntry.status === 'COMPLETED') return language === 'de' ? 'Erneut anschauen' : 'Watch Again';
+    return language === 'de'
+      ? `Weiterschauen E${currentEntry.currentEpisode ?? 1}`
+      : `Continue E${currentEntry.currentEpisode ?? 1}`;
   };
 
-  const watchSeason = currentEntry?.currentSeason ?? (() => {
-    const seasonMatch = title.match(/(?:Season\s*|Part\s*)(\d+)/i);
-    return seasonMatch ? parseInt(seasonMatch[1]) : 1;
-  })();
-
+  const watchSeason = currentEntry?.currentSeason ?? 1;
   const watchEpisode = currentEntry?.currentEpisode ?? 1;
-
-  const statusLabel = getStatusLabel();
+  const score = anime.averageScore ? (anime.averageScore / 10).toFixed(1) : null;
 
   return (
     <div className="relative">
-      {anime.bannerImage && (
-        <div className="relative h-64 md:h-80 overflow-hidden">
-          <img
-            src={anime.bannerImage}
-            alt=""
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/50 to-transparent" />
-        </div>
-      )}
+      {/* Hero Banner */}
+      <div className="relative h-[50vh] min-h-[400px] overflow-hidden">
+        <img
+          src={anime.bannerImage || anime.coverImage.large || anime.coverImage.medium}
+          alt=""
+          className="w-full h-full object-cover"
+          loading="eager"
+        />
+        <div
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(to bottom, rgba(10,10,15,1) 0%, rgba(10,10,15,0) 20%, rgba(10,10,15,0) 70%, rgba(10,10,15,1) 100%)' }}
+        />
+      </div>
 
-      <div className="max-w-7xl mx-auto px-4 relative z-10" style={{ marginTop: anime.bannerImage ? '-8rem' : '2rem' }}>
-        <div className="flex flex-col md:flex-row gap-6">
-          <img
-            src={anime.coverImage.large || anime.coverImage.medium}
-            alt={title}
-            className="w-48 h-72 object-cover rounded-lg shadow-xl flex-shrink-0"
-          />
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 relative z-10 -mt-40">
+        <div className="flex flex-col md:flex-row gap-6 md:gap-8">
+          {/* Poster */}
+          <div className="flex-shrink-0 w-48 md:w-56">
+            <div className="relative overflow-hidden rounded-xl shadow-2xl shadow-black/50">
+              <img
+                src={anime.coverImage.large || anime.coverImage.medium}
+                alt={title}
+                className="w-full aspect-[3/4] object-cover"
+                loading="eager"
+              />
+            </div>
+          </div>
 
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold text-white mb-2">{title}</h1>
+          {/* Info */}
+          <div className="flex-1 pt-2 md:pt-16">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-300 mb-3">
+              {score && (
+                <span className="flex items-center gap-1 px-2 py-0.5 bg-black/40 rounded">
+                  <svg className="w-3.5 h-3.5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                  {score}
+                </span>
+              )}
+              {anime.format && <span className="px-2 py-0.5 bg-black/40 rounded uppercase">{anime.format}</span>}
+              {anime.episodes && <span className="px-2 py-0.5 bg-black/40 rounded">{anime.episodes} EP</span>}
+              {anime.year && <span className="px-2 py-0.5 bg-black/40 rounded">{anime.year}</span>}
+              <span className="px-2 py-0.5 bg-black/40 rounded">{anime.status?.replace(/_/g, ' ')}</span>
+            </div>
+
+            <h1 className="text-3xl md:text-4xl font-bold text-white mb-1 leading-tight">{title}</h1>
             {anime.title.romaji !== title && (
-              <p className="text-gray-400 mb-4">{anime.title.romaji}</p>
+              <p className="text-base text-gray-400 mb-4">{anime.title.romaji}</p>
             )}
 
-            <div className="flex flex-wrap gap-2 mb-4">
+            {/* Genres */}
+            <div className="flex flex-wrap gap-2 mb-5">
               {anime.genres.map((genre) => (
-                <span key={genre} className="px-3 py-1 bg-gray-800 text-gray-300 text-sm rounded-full">
+                <a
+                  key={genre}
+                  href={`/browse?genre=${encodeURIComponent(genre)}`}
+                  className="px-3 py-1 bg-white/10 hover:bg-white/20 transition text-gray-200 text-sm rounded-full"
+                >
                   {genre}
-                </span>
+                </a>
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-4 text-sm text-gray-400 mb-4">
-              {anime.format && <span>{anime.format}</span>}
-              {anime.status && <span>• {anime.status}</span>}
-              {anime.episodes && <span>• {anime.episodes} episodes</span>}
-              {anime.averageScore && <span>• {anime.averageScore}%</span>}
-              {anime.year && <span>• {anime.year}</span>}
+            {/* Rating + Actions */}
+            <div className="flex flex-wrap items-center gap-3 mb-5">
+              <StarRating animeId={anime.id} size="md" />
             </div>
 
-            <div className="mb-4 flex gap-3">
+            <div className="flex flex-wrap gap-3 mb-6">
               <a
                 href={`/watch/${displaySlug}/${watchSeason}/${watchEpisode}?id=${anime.id}`}
-                className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-base font-bold transition"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-bold text-base transition shadow-lg"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: '#fff',
+                  boxShadow: '0 4px 14px var(--color-primary-shadow)',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary)'}
               >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 {getWatchButtonLabel()}
               </a>
               <button
                 onClick={handleWatchlistToggle}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                className={`inline-flex items-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition border ${
                   inWatchlist
-                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                    : 'bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white'
+                    ? 'text-white'
+                    : 'text-gray-300 hover:text-white'
                 }`}
+                style={{
+                  backgroundColor: inWatchlist ? 'var(--color-primary)' : 'rgba(255,255,255,0.1)',
+                  borderColor: inWatchlist ? 'var(--color-primary)' : 'rgba(255,255,255,0.15)',
+                }}
+                onMouseEnter={(e) => {
+                  if (!inWatchlist) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.15)';
+                }}
+                onMouseLeave={(e) => {
+                  if (!inWatchlist) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+                }}
               >
-                {inWatchlist ? `✓ ${statusLabel}` : (language === 'de' ? '+ Merkliste' : '+ Watchlist')}
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill={inWatchlist ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d={inWatchlist ? "M5 13l4 4L19 7" : "M12 4v16m8-8H4"} />
+                </svg>
+                {inWatchlist ? `✓ ${getStatusLabel()}` : (language === 'de' ? 'Merkliste' : 'Watchlist')}
               </button>
             </div>
 
+            {/* Description */}
             {anime.description && (
-              <div className="relative">
+              <div className="relative max-w-3xl">
                 <div
-                  className="text-gray-300 leading-relaxed max-w-3xl"
-                  style={{ maxHeight: isExpanded ? 'none' : '5.5em', overflow: 'hidden' }}
+                  ref={descRef}
+                  className="text-gray-300 text-sm leading-relaxed"
+                  style={{ maxHeight: isExpanded ? 'none' : '4.5em', overflow: 'hidden' }}
                   dangerouslySetInnerHTML={{ __html: sanitizeHtml(anime.description) }}
                 />
                 {!isExpanded && (
-                  <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none" style={{ background: 'linear-gradient(to top, var(--bg-primary, #0a0a0f), transparent)' }} />
                 )}
                 <button
                   onClick={() => setIsExpanded(!isExpanded)}
-                  className="text-purple-400 hover:text-purple-300 text-sm mt-1 relative z-10"
+                  className="text-sm mt-1 relative z-10 transition hover:opacity-80"
+                  style={{ color: 'var(--color-primary)' }}
                 >
-                  {isExpanded ? 'Show less' : 'Show more'}
+                  {isExpanded
+                    ? (language === 'de' ? 'Weniger anzeigen' : 'Show less')
+                    : (language === 'de' ? 'Mehr anzeigen' : 'Show more')}
                 </button>
               </div>
             )}
           </div>
         </div>
 
-        <div className="mt-8">
-          <h2 className="text-xl font-bold text-white mb-4">
-            {language === 'de' ? 'Episoden' : 'Episodes'} {aniworldLoading && <span className="text-sm font-normal text-gray-400">({language === 'de' ? 'Verfügbarkeit wird geprüft...' : 'checking availability...'})</span>}
-          </h2>
+        {/* Episodes */}
+        <section className="mt-12 mb-10">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-1 h-6 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
+            <h2 className="text-xl md:text-2xl font-bold text-white">
+              {language === 'de' ? 'Episoden' : 'Episodes'}
+              {aniworldLoading && (
+                <span className="text-sm font-normal text-gray-400 ml-2">
+                  ({language === 'de' ? 'Verfügbarkeit wird geprüft...' : 'checking availability...'})
+                </span>
+              )}
+            </h2>
+          </div>
           {aniworldLoading ? (
-            <div className="text-gray-400 py-8 text-center">Loading episodes...</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-20 bg-gray-800 rounded-lg animate-pulse" />
+              ))}
+            </div>
           ) : (
             <EpisodeList
               key={anime.id}
@@ -244,23 +394,24 @@ const title = anime.title.english ?? anime.title.romaji;
               animeId={anime.id}
               seasons={seasons}
               defaultSeason={watchSeason}
+              episodeThumbnails={mergedThumbnails ?? anime.episodeThumbnails}
+              movies={movies}
+              movieSlugs={movieSlugs}
             />
           )}
-        </div>
+        </section>
+
+        <RelatedAnime relations={anime.relations} />
+        <RecommendationsRow animeId={anime.id} />
       </div>
     </div>
   );
 }
 
-export default function AnimeDetailPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = use(params);
+export default function AnimeDetailPage({ params }: { params: { slug: string } }) {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-8 text-gray-400">Loading...</div>}>
-      <AnimeDetailContent slug={slug} />
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-16 text-gray-400">Loading...</div>}>
+      <AnimeDetailContent slug={params.slug} />
     </Suspense>
   );
 }

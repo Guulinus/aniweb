@@ -76,7 +76,7 @@ export default function WatchlistPage() {
       <div className="max-w-7xl mx-auto px-4 py-16 text-center">
         <h1 className="text-3xl font-bold text-white mb-4">Watchlist</h1>
         <p className="text-gray-400 text-lg mb-6">Your watchlist is empty.</p>
-        <Link href="/browse" className="text-purple-400 hover:text-purple-300 transition">
+        <Link href="/browse" className="text-theme-primary hover:text-theme-hover focus-visible:text-theme-primary transition">
           Browse anime →
         </Link>
       </div>
@@ -92,8 +92,8 @@ export default function WatchlistPage() {
           onClick={() => setFilter('ALL')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
             filter === 'ALL'
-              ? 'bg-purple-600 text-white'
-              : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              ? 'bg-theme-primary text-white'
+              : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
           }`}
         >
           All ({entries.length})
@@ -107,8 +107,8 @@ export default function WatchlistPage() {
               onClick={() => setFilter(status)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
                 filter === status
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  ? 'bg-theme-primary text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
               }`}
             >
               {statusLabels[status]} ({count})
@@ -133,7 +133,7 @@ export default function WatchlistPage() {
             return (
               <div
                 key={entry.animeId}
-                className="flex items-center gap-4 bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 transition"
+                className="flex items-center gap-4 bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 focus-visible:border-gray-700 transition"
               >
                 <Link href={`/anime/${slug}?id=${entry.animeId}`} className="flex-shrink-0">
                   {(anime?.coverImage?.medium || entry.coverImage) && (
@@ -141,6 +141,7 @@ export default function WatchlistPage() {
                       src={anime?.coverImage?.medium ?? entry.coverImage}
                       alt={title}
                       className="w-16 h-24 object-cover rounded"
+                      loading="lazy"
                     />
                   )}
                 </Link>
@@ -148,7 +149,7 @@ export default function WatchlistPage() {
                 <div className="flex-1 min-w-0">
                   <Link
                     href={`/anime/${slug}?id=${entry.animeId}`}
-                    className="text-white font-medium hover:text-purple-400 transition truncate block"
+                    className="text-white font-medium hover:text-theme-primary focus-visible:text-theme-primary transition truncate block"
                   >
                     {title}
                   </Link>
@@ -166,7 +167,7 @@ export default function WatchlistPage() {
                   <select
                     value={entry.status}
                     onChange={(e) => updateStatus(entry.animeId, e.target.value as WatchlistStatus)}
-                    className="bg-gray-800 text-gray-300 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:border-purple-500 focus:outline-none"
+                    className="bg-gray-800 text-gray-300 text-sm rounded-lg px-3 py-2 border border-gray-700 focus:border-theme-primary focus:outline-none"
                   >
                     {(Object.keys(statusLabels) as WatchlistStatus[]).map((status) => (
                       <option key={status} value={status}>
@@ -176,7 +177,7 @@ export default function WatchlistPage() {
                   </select>
                   <button
                     onClick={() => remove(entry.animeId)}
-                    className="p-2 text-gray-500 hover:text-red-400 transition"
+                    className="p-2 text-gray-500 hover:text-red-400 focus-visible:text-red-400 transition"
                     title="Remove from watchlist"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">

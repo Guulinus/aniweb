@@ -1,0 +1,10 @@
+HTTP/1.1 201 Created
+Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+vary: RSC, Next-Router-State-Tree, Next-Router-Prefetch
+content-type: application/json
+set-cookie: aniroll_session=eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjUsInVzZXJuYW1lIjoibG9jYWx0ZXN0IiwiZXhwIjoxNzgzNDIwODQ3LCJpYXQiOjE3ODA4Mjg4NDd9.6A77bI5gNyXalQ-d8dv1ibZu2AteSANXU08jvTi7HtE; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000
+Date: Sun, 07 Jun 2026 10:40:47 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+Transfer-Encoding: chunked
+

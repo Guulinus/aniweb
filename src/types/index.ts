@@ -1,5 +1,6 @@
 export interface AnimeBasic {
   id: number;
+  idMal?: number | null;
   title: {
     romaji: string;
     english: string | null;
@@ -32,9 +33,31 @@ export interface AnimeDetail extends AnimeBasic {
           romaji: string;
           english: string | null;
         };
+        format?: string;
+        episodes?: number | null;
+        coverImage?: {
+          large: string;
+          medium: string;
+        };
+        bannerImage?: string | null;
+        startDate?: { year?: number | null } | null;
       };
     }>;
   };
+}
+
+export interface RelatedMovie {
+  id: number;
+  title: {
+    romaji: string;
+    english: string | null;
+  };
+  coverImage?: {
+    large: string;
+    medium: string;
+  } | null;
+  year?: number | null;
+  relationType: string;
 }
 
 export interface AniworldSeason {
@@ -51,6 +74,7 @@ export interface StreamLink {
   url: string;
   language?: string;
   hasAds?: boolean;
+  quality?: string;
 }
 
 export interface EpisodeStream {
@@ -76,6 +100,15 @@ export interface BrowseResponse extends SearchResponse {
 
 export type WatchlistStatus = 'PLANNING' | 'WATCHING' | 'COMPLETED' | 'ON_HOLD' | 'DROPPED';
 
+export interface User {
+  id: number;
+  username: string;
+  displayName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  createdAt: number;
+}
+
 export interface WatchlistEntry {
   animeId: number;
   animeSlug: string;
@@ -88,4 +121,5 @@ export interface WatchlistEntry {
   aniworldSlug?: string;
   lastWatched?: number;
   currentSeason?: number;
+  updatedAt?: number;
 }

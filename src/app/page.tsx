@@ -1,73 +1,97 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import HorizontalAnimeSection from '@/components/HorizontalAnimeSection';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { useLanguage } from '@/hooks/useLanguage';
 import type { AnimeBasic } from '@/types';
 
+function dedupe(anime: AnimeBasic[], exclude: Set<number>): AnimeBasic[] {
+  return anime.filter(a => !exclude.has(a.id));
+}
+
+function SectionHeader({ title, href, lang }: { title: string; href?: string; lang: string }) {
+  return (
+    <div className="flex items-center justify-between mb-6 group">
+      <div className="flex items-center gap-3">
+        <div className="w-1 h-6 bg-theme-primary rounded-full flex-shrink-0" />
+        <h2 className="text-xl md:text-2xl font-bold text-white">{title}</h2>
+      </div>
+      {href && (
+        <Link href={href} className="text-sm text-gray-400 hover:text-theme-primary focus-visible:text-theme-primary transition flex items-center gap-1">
+          {lang === 'de' ? 'Alle anzeigen' : 'View All'}
+          <span className="text-lg leading-none">→</span>
+        </Link>
+      )}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { language } = useLanguage();
-  const heroText = language === 'de' 
-    ? { main: 'Jeder Anime hier kostenlos', sub: 'Deutsche Synchronisation' }
-    : { main: 'Every anime here for free', sub: 'German Dub' };
+  const heroText = language === 'de'
+    ? { main: 'Jeder Anime hier kostenlos', sub: 'Deutsche Synchronisation & japanische Originalversion' }
+    : { main: 'Every anime here for free', sub: 'German Dub & Japanese Original' };
+
+  const [allShownIds, setAllShownIds] = useState<Set<number>>(new Set());
+
+  const onIdsSeen = useCallback((ids: number[]) => {
+    setAllShownIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.add(id));
+      return next;
+    });
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto px-4 pb-8">
-      {/* Hero section - full width, touches navbar */}
-      <div className="relative -mt-8 -mx-4 overflow-hidden h-80 md:h-96">
-        {/* Background image */}
-        <div 
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ 
-            backgroundImage: 'url(/hero-bg.jpg)',
-          }}
-        />
-        {/* Gradient overlay for readability */}
-        <div 
-          className="absolute inset-0"
-          style={{ 
-            background: 'linear-gradient(to right, rgba(26,26,46,0.95) 0%, rgba(26,26,46,0.7) 50%, rgba(26,26,46,0.4) 100%)'
-          }}
-        />
-        
-        {/* Bottom fade effect */}
-        <div 
-          className="absolute inset-x-0 bottom-0 h-24"
-          style={{ 
-            background: 'linear-gradient(to top, rgba(3,7,18,1) 0%, rgba(3,7,18,0) 100%)'
-          }}
-        />
-        
-        {/* Content - aligned to the left */}
-        <div className="relative h-full flex flex-col items-start justify-center text-left px-8 md:px-16 z-10">
-          <h1 className="text-3xl md:text-5xl font-bold text-white mb-2 drop-shadow-lg">
-            {heroText.main}
-          </h1>
-          <p className="text-base md:text-lg text-gray-300 drop-shadow">
-            {heroText.sub}
-          </p>
-          <div className="mt-6 flex gap-4">
-            <a 
-              href="/browse"
-              className="px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium transition"
-            >
-              {language === 'de' ? 'Jetzt Anschauen' : 'Watch Now'}
-            </a>
-            <a 
-              href="/browse"
-              className="px-6 py-3 bg-gray-700/80 hover:bg-gray-600 text-white rounded-lg font-medium transition"
-            >
-              {language === 'de' ? 'Durchsuchen' : 'Browse'}
-            </a>
+      {/* Hero */}
+      <div className="relative -mt-8 -mx-4 overflow-hidden mb-14">
+        <div className="relative h-80 md:h-[420px]">
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: 'url(/hero-bg.jpg)' }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0f] via-[#0a0a0f]/70 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#0a0a0f] to-transparent" />
+
+          <div className="relative h-full flex flex-col items-start justify-center px-8 md:px-16 z-10 max-w-2xl">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-theme-soft border-theme-soft text-theme-primary text-xs font-medium mb-4">
+              <span className="w-1.5 h-1.5 bg-theme-primary rounded-full animate-pulse" />
+              {language === 'de' ? 'Kostenlos streamen' : 'Free streaming'}
+            </div>
+            <h1 className="text-4xl md:text-6xl font-bold text-white mb-3 leading-tight">
+              {heroText.main}
+            </h1>
+            <p className="text-base md:text-lg text-gray-300 mb-8">
+              {heroText.sub}
+            </p>
+            <div className="flex gap-4">
+              <Link
+                href="/browse"
+                className="px-6 py-3 bg-theme-primary hover:bg-theme-hover focus-visible:bg-theme-hover text-white rounded-lg font-semibold transition shadow-lg shadow-theme-primary"
+              >
+                {language === 'de' ? 'Jetzt Anschauen' : 'Watch Now'}
+              </Link>
+              <Link
+                href="/seasonal"
+                className="px-6 py-3 bg-white/10 hover:bg-white/20 focus-visible:bg-white/20 text-white rounded-lg font-medium transition backdrop-blur-sm"
+              >
+                {language === 'de' ? 'Aktuelle Saison' : 'Current Season'}
+              </Link>
+            </div>
           </div>
         </div>
       </div>
 
       <ResumeWatchingSection />
-      <PopularSection />
-      <TrendingSection />
-      <RecommendationsSection />
+      <PopularSection onIdsSeen={onIdsSeen} />
+      <TrendingSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
+      <SeasonalSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
+      <NewReleasesSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
+      <RecommendationsSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
+      <GenreRowsSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
     </div>
   );
 }
@@ -78,7 +102,7 @@ function ResumeWatchingSection() {
   const [animeData, setAnimeData] = useState<Map<number, AnimeBasic>>(new Map());
   const [positions, setPositions] = useState<Map<string, {time: number; duration: number}>>(new Map());
   const [loading, setLoading] = useState(true);
-  const sectionTitle = language === 'de' ? 'Weiterschauen' : 'Continue Watching';
+  const title = language === 'de' ? 'Weiterschauen' : 'Continue Watching';
 
   const entriesWithProgress = entries
     .filter(e => e.currentEpisode && e.currentEpisode > 0)
@@ -95,13 +119,10 @@ function ResumeWatchingSection() {
     }
   });
 
-  const watchingEntries = Array.from(baseTitleMap.values()).slice(0, 6);
+  const watchingEntries = Array.from(baseTitleMap.values()).slice(0, 10);
 
   useEffect(() => {
-    if (watchingEntries.length === 0) {
-      setLoading(false);
-      return;
-    }
+    if (watchingEntries.length === 0) { setLoading(false); return; }
 
     const posMap = new Map<string, {time: number; duration: number}>();
     watchingEntries.forEach(entry => {
@@ -124,69 +145,93 @@ function ResumeWatchingSection() {
         try {
           const res = await fetch(`/api/anilist/search?id=${entry.animeId}`);
           const data = await res.json();
-          if (data.results?.[0]) {
-            map.set(entry.animeId, data.results[0]);
-          }
+          if (data.results?.[0]) map.set(entry.animeId, data.results[0]);
         } catch {}
       }));
       setAnimeData(map);
       setLoading(false);
     };
-
     fetchAnimeData();
   }, [watchingEntries.length]);
+
+  useEffect(() => {
+    function handleSync() {
+      if (watchingEntries.length === 0) return;
+      const posMap = new Map<string, {time: number; duration: number}>();
+      watchingEntries.forEach(entry => {
+        const key = `watchPosition:${entry.animeId}:${entry.animeSlug}:${entry.currentSeason}:${entry.currentEpisode}`;
+        try {
+          const saved = localStorage.getItem(key);
+          if (saved) {
+            const data = JSON.parse(saved);
+            if (data.time && data.duration && data.time / data.duration < 0.9) {
+              posMap.set(key, data);
+            }
+          }
+        } catch {}
+      });
+      setPositions(posMap);
+    }
+    window.addEventListener('sync-complete', handleSync);
+    return () => window.removeEventListener('sync-complete', handleSync);
+  }, [watchingEntries]);
 
   if (loading) return null;
   if (watchingEntries.length === 0) return null;
 
   return (
-    <section className="mb-12">
-      <h2 className="text-2xl font-bold text-white mb-6">{sectionTitle}</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+    <section className="mb-14">
+      <SectionHeader title={title} lang={language} />
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {watchingEntries.map(entry => {
           const anime = animeData.get(entry.animeId);
           if (!anime) return null;
-          
-          const episodeToWatch = entry.currentEpisode ?? 1;
           const seasonToWatch = entry.currentSeason ?? 1;
+          const episodeToWatch = entry.currentEpisode ?? 1;
           const totalEps = anime?.episodes || entry.totalEpisodes || 1;
           const currentEp = entry.currentEpisode || 1;
-          
           const posKey = `watchPosition:${entry.animeId}:${entry.animeSlug}:${seasonToWatch}:${episodeToWatch}`;
           const savedPos = positions.get(posKey);
-          const progressPercent = savedPos 
-            ? (savedPos.time / savedPos.duration) * 100 
+          const progressPercent = savedPos
+            ? (savedPos.time / savedPos.duration) * 100
             : ((currentEp - 1) / totalEps) * 100;
-          
+
           return (
-            <a
+            <Link
               key={entry.animeId}
               href={`/watch/${entry.animeSlug}/${seasonToWatch}/${episodeToWatch}?id=${entry.animeId}${entry.aniworldSlug ? `&awSlug=${entry.aniworldSlug}` : ''}`}
               className="group block"
             >
-              <div className="relative overflow-hidden rounded-lg bg-gray-800 aspect-[3/4]">
+              <div className="relative overflow-hidden rounded-lg bg-gray-800 aspect-[3/4] shadow-lg">
                 <img
                   src={entry.coverImage || anime?.coverImage?.large || anime?.coverImage?.medium}
                   alt={anime?.title?.english ?? anime?.title?.romaji}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  className="w-full h-full object-cover group-hover:scale-105 group-focus-visible:scale-105 transition-transform duration-500"
                   loading="lazy"
                 />
-                {progressPercent > 0 && (
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700">
-                    <div 
-                      className="h-full bg-purple-500" 
-                      style={{ width: `${Math.min(progressPercent, 95)}%` }} 
-                    />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-300" />
+                {savedPos && (
+                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-700/80">
+                    <div className="h-full bg-theme-primary" style={{ width: `${Math.min(progressPercent, 95)}%` }} />
                   </div>
                 )}
+                <div className="absolute top-2 left-2">
+                  <span className="px-2 py-0.5 text-xs font-semibold bg-theme-primary text-white rounded">
+                    S{seasonToWatch} E{episodeToWatch}
+                  </span>
+                </div>
               </div>
-              <p className="mt-2 text-sm text-white truncate group-hover:text-purple-400 transition">
+              <p className="mt-2 text-sm text-white truncate group-hover:text-theme-primary group-focus-visible:text-theme-primary transition font-medium">
                 {entry.title}
               </p>
-              <p className="text-xs text-gray-400">
-                {language === 'de' ? `S${seasonToWatch} E${episodeToWatch}${savedPos ? ` (${Math.round(savedPos.time / 60)}min)` : ''}` : `S${seasonToWatch} E${episodeToWatch}${savedPos ? ` (${Math.round(savedPos.time / 60)}min)` : ''}`}
-              </p>
-            </a>
+              {savedPos && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {savedPos.duration - savedPos.time > 60
+                    ? `${Math.round((savedPos.duration - savedPos.time) / 60)}min ${language === 'de' ? 'verbleiben' : 'left'}`
+                    : `${Math.round(savedPos.duration - savedPos.time)}s ${language === 'de' ? 'verbleiben' : 'left'}`}
+                </p>
+              )}
+            </Link>
           );
         })}
       </div>
@@ -194,82 +239,221 @@ function ResumeWatchingSection() {
   );
 }
 
-function PopularSection() {
+function PopularSection({ onIdsSeen }: { onIdsSeen: (ids: number[]) => void }) {
   const { language } = useLanguage();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
-  const title = language === 'de' ? 'Beliebt' : 'Popular';
 
   useEffect(() => {
-    fetch('/api/anilist/popular?perPage=12')
+    fetch('/api/anilist/popular?perPage=16')
       .then(r => r.json())
-      .then(d => { setAnime(d.results ?? []); setLoading(false); })
+      .then((d: { results?: AnimeBasic[] }) => { const arr = d.results ?? []; setAnime(arr); onIdsSeen(arr.map(a => a.id)); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  return <HorizontalAnimeSection title={language === 'de' ? 'Beliebt' : 'Popular'} anime={anime} loading={loading} href="/browse?sort=POPULARITY_DESC" />;
+}
+
+function TrendingSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+  const { language } = useLanguage();
+  const [anime, setAnime] = useState<AnimeBasic[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/anilist/trending?perPage=16')
+      .then(r => r.json())
+      .then((d: { results?: AnimeBasic[] }) => {
+        const arr = d.results ?? [];
+        const filtered = dedupe(arr, excludeIds);
+        setAnime(filtered);
+        onIdsSeen(filtered.map(a => a.id));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [excludeIds.size]);
+
+  return <HorizontalAnimeSection title={language === 'de' ? 'Trend' : 'Trending'} anime={anime} loading={loading} href="/browse?sort=TRENDING_DESC" />;
+}
+
+function SeasonalSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+  const { language } = useLanguage();
+  const [anime, setAnime] = useState<AnimeBasic[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [label, setLabel] = useState('');
+
+  useEffect(() => {
+    fetch('/api/anilist/seasonal')
+      .then(r => r.json())
+      .then((d: { results?: AnimeBasic[]; season?: string; year?: number }) => {
+        const arr = d.results ?? [];
+        const filtered = dedupe(arr, excludeIds);
+        setAnime(filtered);
+        onIdsSeen(filtered.map(a => a.id));
+        const seasonNames: Record<string, string> = {
+          WINTER: language === 'de' ? 'Winter' : 'Winter',
+          SPRING: language === 'de' ? 'Frühling' : 'Spring',
+          SUMMER: language === 'de' ? 'Sommer' : 'Summer',
+          FALL: language === 'de' ? 'Herbst' : 'Fall',
+        };
+        setLabel(`${seasonNames[d.season ?? ''] || d.season} ${d.year ?? ''}`);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [excludeIds.size]);
+
+  return <HorizontalAnimeSection title={label} anime={anime} loading={loading} href="/seasonal" />;
+}
+
+function NewReleasesSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+  const { language } = useLanguage();
+  const [anime, setAnime] = useState<AnimeBasic[]>([]);
+  const [loading, setLoading] = useState(true);
+  const title = language === 'de' ? 'Neu auf AniRoll' : 'New on AniRoll';
+
+  useEffect(() => {
+    fetch('/api/anilist/browse?sort=START_DATE_DESC&perPage=16')
+      .then(r => r.json())
+      .then((d: { results?: AnimeBasic[] }) => {
+        const arr = d.results ?? [];
+        const filtered = dedupe(arr, excludeIds);
+        setAnime(filtered);
+        onIdsSeen(filtered.map(a => a.id));
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [excludeIds.size]);
 
   return <HorizontalAnimeSection title={title} anime={anime} loading={loading} />;
 }
 
-function TrendingSection() {
-  const { language } = useLanguage();
-  const [anime, setAnime] = useState<AnimeBasic[]>([]);
-  const [loading, setLoading] = useState(true);
-  const title = language === 'de' ? 'Trend' : 'Trending';
-
-  useEffect(() => {
-    fetch('/api/anilist/trending?perPage=12')
-      .then(r => r.json())
-      .then(d => { setAnime(d.results ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  return <HorizontalAnimeSection title={title} anime={anime} loading={loading} />;
-}
-
-function RecommendationsSection() {
+function RecommendationsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
   const { language } = useLanguage();
   const { entries } = useWatchlist();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
-  const title = language === 'de' ? 'Könnte dir auch gefallen' : 'You Might Also Like';
+  const title = language === 'de' ? 'Empfehlungen' : 'Recommended';
 
   useEffect(() => {
-    const fetchRecommendations = async () => {
-      const watchedGenres = new Set<string>();
-      
-      for (const entry of entries.slice(0, 10)) {
-        try {
-          const res = await fetch(`/api/anilist/search?id=${entry.animeId}`);
-          const data = await res.json();
-          const animeData = data.results?.[0];
-          if (animeData?.genres) {
-            animeData.genres.forEach((g: string) => watchedGenres.add(g));
-          }
-        } catch {}
-      }
-
-      const genresArray = Array.from(watchedGenres);
-      if (genresArray.length === 0) {
-        const res = await fetch('/api/anilist/popular?perPage=12');
-        const data = await res.json();
-        setAnime(data.results ?? []);
+    const fetchRecs = async () => {
+      const watchedIds = entries.slice(0, 10);
+      if (watchedIds.length === 0) {
+        const res = await fetch('/api/anilist/trending?perPage=16');
+        const data: { results?: AnimeBasic[] } = await res.json();
+        const arr = data.results ?? [];
+        const filtered = dedupe(arr, excludeIds);
+        setAnime(filtered);
+        onIdsSeen(filtered.map(a => a.id));
         setLoading(false);
         return;
       }
 
-      const topGenres = genresArray.slice(0, 3);
-      const params = new URLSearchParams();
-      params.set('perPage', '24');
-      topGenres.forEach(g => params.append('genre', g));
+      const lastEntry = watchedIds[0];
+      try {
+        const res = await fetch(`/api/anilist/recommendations?id=${lastEntry.animeId}`);
+        const data: { results?: AnimeBasic[] } = await res.json();
+        const recResults = data.results;
+        if (recResults && recResults.length > 0) {
+          const arr = recResults.slice(0, 16);
+          const filtered = dedupe(arr, excludeIds);
+          setAnime(filtered);
+          onIdsSeen(filtered.map(a => a.id));
+          setLoading(false);
+          return;
+        }
+      } catch {}
 
-      const res = await fetch(`/api/anilist/browse?${params}`);
-      const data = await res.json();
-      setAnime(data.results ?? []);
-      setLoading(false);
+      try {
+        const searchRes = await fetch(`/api/anilist/search?id=${lastEntry.animeId}`);
+        const searchData: { results?: Array<{ genres?: string[] }> } = await searchRes.json();
+        const genres = searchData.results?.[0]?.genres;
+        const genreList = genres;
+        if (genreList && genreList.length > 0) {
+          const params = new URLSearchParams();
+          params.set('perPage', '20');
+          genreList.slice(0, 2).forEach((g: string) => params.append('genre', g));
+          params.set('sort', 'SCORE_DESC');
+          const res = await fetch(`/api/anilist/browse?${params}`);
+          const data: { results?: AnimeBasic[] } = await res.json();
+          const arr = data.results ?? [];
+          const filtered = dedupe(arr, excludeIds);
+          setAnime(filtered);
+          onIdsSeen(filtered.map(a => a.id));
+          setLoading(false);
+          return;
+        }
+      } catch {}
+
+      fetch('/api/anilist/trending?perPage=16')
+        .then(r => r.json())
+        .then((d: { results?: AnimeBasic[] }) => {
+          const arr = d.results ?? [];
+          const filtered = dedupe(arr, excludeIds);
+          setAnime(filtered);
+          onIdsSeen(filtered.map(a => a.id));
+          setLoading(false);
+        }).catch(() => setLoading(false));
     };
-
-    fetchRecommendations();
-  }, [entries.length]);
+    fetchRecs();
+  }, [excludeIds.size, entries.length]);
 
   return <HorizontalAnimeSection title={title} anime={anime} loading={loading} />;
+}
+
+function GenreRowsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+  const { language } = useLanguage();
+  const { entries } = useWatchlist();
+  const [rows, setRows] = useState<{ genre: string; anime: AnimeBasic[] }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchGenres = async () => {
+      const genres = new Set<string>();
+      for (const entry of entries.slice(0, 10)) {
+        try {
+          const res = await fetch(`/api/anilist/search?id=${entry.animeId}`);
+          const data: { results?: Array<{ genres?: string[] }> } = await res.json();
+          data.results?.[0]?.genres?.forEach((g: string) => genres.add(g));
+        } catch {}
+      }
+
+      const topGenres = Array.from(genres).slice(0, 3);
+      if (topGenres.length === 0) { setLoading(false); return; }
+
+      const results: { genre: string; anime: AnimeBasic[] }[] = [];
+      for (const genre of topGenres) {
+        try {
+          const randomPage = Math.floor(Math.random() * 5) + 1;
+          const res = await fetch(`/api/anilist/browse?genre=${encodeURIComponent(genre)}&perPage=20&sort=TRENDING_DESC&page=${randomPage}`);
+          const data: { results?: AnimeBasic[] } = await res.json();
+          const resultsArr = data.results;
+          if (resultsArr && resultsArr.length > 0) {
+            const filtered = dedupe(resultsArr, excludeIds);
+            if (filtered.length > 0) {
+              results.push({ genre, anime: filtered });
+              onIdsSeen(filtered.map(a => a.id));
+            }
+          }
+        } catch {}
+      }
+      setRows(results);
+      setLoading(false);
+    };
+    fetchGenres();
+  }, [excludeIds.size, entries.length]);
+
+  if (loading || rows.length === 0) return null;
+
+  return (
+    <>
+      {rows.map(row => (
+        <HorizontalAnimeSection
+          key={row.genre}
+          title={row.genre}
+          anime={row.anime}
+          loading={false}
+          href={`/browse?genre=${encodeURIComponent(row.genre)}`}
+        />
+      ))}
+    </>
+  );
 }

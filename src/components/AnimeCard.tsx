@@ -16,12 +16,12 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
         <img
           src={anime.coverImage.large || anime.coverImage.medium}
           alt={title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          className="w-full h-full object-cover group-hover:scale-105 group-focus-visible:scale-105 transition-transform duration-300"
           loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" />
       </div>
-      <h3 className="mt-2 text-sm text-white truncate group-hover:text-purple-400 transition">
+      <h3 className="mt-2 text-sm text-white truncate group-hover:text-theme-primary group-focus-visible:text-theme-primary transition">
         {title}
       </h3>
       {anime.year && (

@@ -1,19 +1,31 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import type { StreamLink } from '@/types';
 import { useLanguage } from '@/hooks/useLanguage';
+import { pushServerData } from '@/lib/syncClient';
+
+interface SkipTime {
+  startTime: number;
+  endTime: number;
+  type: string;
+}
 
 interface VideoPlayerProps {
   links: StreamLink[];
   episodeTitle: string;
   animeId?: number;
+  idMal?: number | null;
+  episodeNum?: number;
   seekTo?: number;
+  onComplete?: () => void;
+  skipData?: SkipTime | null;
+  nextEpisodeUrl?: string;
 }
 
-export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: initialSeekTo }: VideoPlayerProps) {
+export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episodeNum, seekTo: initialSeekTo, onComplete, skipData, nextEpisodeUrl }: VideoPlayerProps) {
   const { language } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Artplayer | null>(null);
@@ -22,8 +34,13 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
   const [selectedServer, setSelectedServer] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [showSkipControls, setShowSkipControls] = useState(false);
+
+  const [skipIntro, setSkipIntro] = useState<SkipTime | null>(null);
+  const [showSkipBtn, setShowSkipBtn] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const skipIntroRef = useRef<SkipTime | null>(null);
+  const showSkipBtnRef = useRef(false);
+  const skipBtnHideTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const isHlsUrl = (url: string) => url.includes('.m3u8') || url.includes('m3u8');
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,6 +61,40 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
     selectedServerRef.current = selectedServer;
   }, [selectedServer]);
 
+  useEffect(() => {
+    if (skipData !== undefined) {
+      if (skipData) {
+        console.log('[VideoPlayer] Using skipData prop:', skipData);
+        setSkipIntro(skipData);
+        skipIntroRef.current = skipData;
+      } else {
+        skipIntroRef.current = null;
+        setSkipIntro(null);
+      }
+      return;
+    }
+    if (idMal && episodeNum) {
+      skipIntroRef.current = null;
+      setSkipIntro(null);
+      fetch(`/api/aniskip/${idMal}/${episodeNum}`)
+        .then(r => r.json())
+        .then(data => {
+          const op = data.results?.find((r: any) => (r.skipType || r.type) === 'op');
+          if (op) {
+            const st: SkipTime = { startTime: op.interval.startTime, endTime: op.interval.endTime, type: 'op' };
+            setSkipIntro(st);
+            skipIntroRef.current = st;
+          }
+        })
+        .catch(() => {});
+    } else {
+      skipIntroRef.current = null;
+      setSkipIntro(null);
+    }
+  }, [idMal, episodeNum, skipData]);
+
+
+
   const getSaveKey = useCallback(() => {
     if (!animeIdRef.current) return null;
     const pathParts = window.location.pathname.split('/');
@@ -63,12 +114,20 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
     const currentTime = Math.floor(video.currentTime);
     const duration = Math.floor(video.duration);
 
-    if (!currentTime || !duration || currentTime <= 0 || currentTime / duration >= 0.9) return;
+    if (!currentTime || !duration || currentTime <= 0) return;
+
+    const remaining = duration - currentTime;
+    if (remaining <= 1) {
+      localStorage.removeItem(saveKey);
+      onComplete?.();
+      pushServerData();
+      return;
+    }
 
     localStorage.setItem(saveKey, JSON.stringify({
       time: currentTime,
       duration: duration,
-      updated: Date.now()
+      updatedAt: Date.now()
     }));
 
     const pathParts = window.location.pathname.split('/');
@@ -104,35 +163,7 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
       localStorage.setItem('watchHistory', JSON.stringify(newHistory));
     }
     
-    console.log('[VideoPlayer] Saved position:', currentTime, 'key:', saveKey);
   }, [getSaveKey, episodeTitle]);
-
-  const getVideo = useCallback((): HTMLVideoElement | null => {
-    const video = containerRef.current?.querySelector('video');
-    if (video) return video;
-    const artVideo = document.querySelector('.artplayer video');
-    return (artVideo as HTMLVideoElement) || null;
-  }, []);
-
-  const skipIntro = useCallback((seconds: number) => {
-    const video = getVideo();
-    if (video) {
-      video.currentTime += seconds;
-      console.log('[VideoPlayer] Skip intro:', seconds, 'new time:', video.currentTime);
-    } else {
-      console.log('[VideoPlayer] Video element not found for skipIntro');
-    }
-  }, [getVideo]);
-
-  const skipToTime = useCallback((time: number) => {
-    const video = getVideo();
-    if (video && time > 0 && time < video.duration) {
-      video.currentTime = time;
-      console.log('[VideoPlayer] Skip to time:', time, 'new time:', video.currentTime);
-    } else {
-      console.log('[VideoPlayer] Video element not found or invalid time for skipToTime');
-    }
-  }, [getVideo]);
 
   const cleanup = useCallback(() => {
     if (saveIntervalRef.current) {
@@ -163,7 +194,6 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
   }, []);
 
   const createPlayer = useCallback((seekTo?: number) => {
-    console.log('[VideoPlayer] createPlayer called, animeId:', animeIdRef.current, 'seekTo:', seekTo);
     cleanup();
 
     const currentLinks = linksRef.current;
@@ -175,7 +205,6 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
       return;
     }
 
-    console.log('[VideoPlayer] Initializing player for:', url);
     currentUrlRef.current = url;
     setError(null);
     const isHls = isHlsUrl(url);
@@ -193,13 +222,12 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
       pip: true,
       fullscreen: true,
       fullscreenWeb: true,
+      layers: [],
       mutex: true,
       shortcut: true,
       customType: isHls
         ? {
             m3u8: function (video: HTMLVideoElement, streamUrl: string) {
-              console.log('[VideoPlayer] HLS customType called');
-
               if (hlsRef.current) {
                 hlsRef.current.destroy();
                 hlsRef.current = null;
@@ -223,7 +251,6 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
                 hls.on(Hls.Events.FRAG_LOADED, () => {
                   if (seekPosition && seekPosition > 0 && !hasSeeked.value) {
                     hasSeeked.value = true;
-                    console.log('[VideoPlayer] Fragment loaded, seeking to', seekPosition);
                     video.currentTime = seekPosition;
                   }
                 });
@@ -233,7 +260,6 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
                 video.src = streamUrl;
                 video.addEventListener('canplay', () => {
                   if (seekPosition && seekPosition > 0) {
-                    console.log('[VideoPlayer] Canplay, seeking to', seekPosition);
                     video.currentTime = seekPosition;
                   }
                 }, { once: true });
@@ -245,27 +271,137 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
 
     playerRef.current = art;
 
-    art.on('ready', () => {
-      console.log('[VideoPlayer] Player ready');
-      const video = containerRef.current?.querySelector('video');
-      if (video) {
-        video.addEventListener('pause', () => {
-          console.log('[VideoPlayer] Video pause event');
-          savePosition();
-        });
-        video.addEventListener('play', () => {
-          console.log('[VideoPlayer] Video play event');
-        });
-      }
+    const skipBtnHtml = language === 'de' ? 'Intro überspringen' : 'Skip Intro';
+    const $player = art.template.$player;
+    const skipBtnEl = document.createElement('div');
+    skipBtnEl.id = 'art-skip-intro';
+    skipBtnEl.innerHTML = `<button style="padding:8px 16px;background:#9333ea;color:white;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:none;box-shadow:0 4px 6px -1px rgba(0,0,0,0.3)">${skipBtnHtml}</button>`;
+    skipBtnEl.style.cssText = 'position:absolute;bottom:80px;right:16px;z-index:999;display:none;opacity:0;transition:opacity 0.5s';
+    skipBtnEl.addEventListener('click', () => {
+      const v = containerRef.current?.querySelector('video');
+      const st = skipIntroRef.current;
+      if (v && st) v.currentTime = st.endTime - 1;
+      skipBtnEl.style.display = 'none';
+      skipBtnEl.style.opacity = '0';
+      showSkipBtnRef.current = false;
+      if (skipBtnHideTimerRef.current) clearTimeout(skipBtnHideTimerRef.current);
+      setShowSkipBtn(false);
     });
+    $player.appendChild(skipBtnEl);
+
+    const nextBtnText = language === 'de' ? 'Nächste Folge' : 'Next Episode';
+    const nextEl = document.createElement('div');
+    nextEl.id = 'art-next-episode';
+    nextEl.innerHTML = `
+      <div style="position:absolute;bottom:80px;left:16px;z-index:999;display:none;opacity:0;transition:opacity 0.5s" id="art-next-wrapper">
+        <div style="color:white;font-size:13px;margin-bottom:6px;text-shadow:0 1px 3px rgba(0,0,0,0.8)" id="art-next-countdown"></div>
+        <button style="padding:8px 16px;background:#9333ea;color:white;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:none;box-shadow:0 4px 6px -1px rgba(0,0,0,0.3)">${nextBtnText}</button>
+      </div>`;
+    const nextWrapper = nextEl.firstElementChild as HTMLElement;
+    const nextCountdown = nextWrapper.querySelector('#art-next-countdown') as HTMLElement;
+    const nextButton = nextWrapper.querySelector('button') as HTMLElement;
+    let countdownValue = 10;
+    let countdownInterval: NodeJS.Timeout | null = null;
+
+    const startCountdown = () => {
+      countdownValue = 10;
+      updateCountdownText();
+      nextWrapper.style.display = '';
+      nextWrapper.style.opacity = '1';
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        countdownValue--;
+        if (countdownValue <= 0) {
+          if (countdownInterval) clearInterval(countdownInterval);
+          countdownInterval = null;
+          nextWrapper.style.opacity = '0';
+          setTimeout(() => { nextWrapper.style.display = 'none'; }, 500);
+          if (nextEpisodeUrl) window.location.href = nextEpisodeUrl;
+          return;
+        }
+        updateCountdownText();
+      }, 1000);
+    };
+
+    const updateCountdownText = () => {
+      const cdText = language === 'de'
+        ? `Nächste Folge in ${countdownValue}s`
+        : `Next episode in ${countdownValue}s`;
+      nextCountdown.textContent = cdText;
+    };
+
+    const stopCountdown = () => {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+      nextWrapper.style.opacity = '0';
+      setTimeout(() => { nextWrapper.style.display = 'none'; }, 500);
+    };
+
+    nextButton.addEventListener('click', () => {
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = null;
+      if (nextEpisodeUrl) window.location.href = nextEpisodeUrl;
+    });
+
+    $player.appendChild(nextEl);
+
+    const video = containerRef.current?.querySelector('video');
+    if (video) {
+      video.addEventListener('pause', () => {
+        savePosition();
+      });
+      let autoAdvanceShown = false;
+      video.addEventListener('timeupdate', () => {
+        const st = skipIntroRef.current;
+        if (st && skipBtnEl) {
+          const show = video.currentTime >= st.startTime && video.currentTime < st.endTime;
+          if (show && !showSkipBtnRef.current) {
+            showSkipBtnRef.current = true;
+            skipBtnEl.style.display = '';
+            skipBtnEl.style.opacity = '1';
+            setShowSkipBtn(true);
+            if (skipBtnHideTimerRef.current) clearTimeout(skipBtnHideTimerRef.current);
+            skipBtnHideTimerRef.current = setTimeout(() => {
+              skipBtnEl.style.opacity = '0';
+              setTimeout(() => { if (skipBtnEl.style.opacity === '0') skipBtnEl.style.display = 'none'; }, 500);
+            }, 6000);
+          } else if (!show && showSkipBtnRef.current) {
+            showSkipBtnRef.current = false;
+            skipBtnEl.style.display = 'none';
+            skipBtnEl.style.opacity = '0';
+            setShowSkipBtn(false);
+            if (skipBtnHideTimerRef.current) clearTimeout(skipBtnHideTimerRef.current);
+          }
+        } else if (!st) {
+          if (skipBtnEl && skipBtnEl.style.display !== 'none') {
+            skipBtnEl.style.display = 'none';
+            skipBtnEl.style.opacity = '0';
+          }
+        }
+
+        if (nextEpisodeUrl && video.duration > 0) {
+          const remaining = video.duration - video.currentTime;
+          if (remaining <= 1 && remaining > 0 && !autoAdvanceShown) {
+            autoAdvanceShown = true;
+            startCountdown();
+          } else if (remaining > 1 && autoAdvanceShown) {
+            autoAdvanceShown = false;
+            stopCountdown();
+          }
+        }
+      });
+      video.addEventListener('ended', () => {
+        if (nextEpisodeUrl && !autoAdvanceShown) {
+          autoAdvanceShown = true;
+          startCountdown();
+        }
+      });
+    }
 
     art.on('pause', () => {
-      console.log('[VideoPlayer] Artplayer pause event fired');
       savePosition();
-    });
-
-    art.on('play', () => {
-      console.log('[VideoPlayer] Artplayer play event fired');
     });
 
     saveIntervalRef.current = setInterval(() => {
@@ -282,6 +418,12 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
       }
     });
   }, [links, selectedServer, cleanup, savePosition]);
+
+  useEffect(() => {
+    const handleVisibility = () => { if (document.hidden) pushServerData(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || links.length === 0) return;
@@ -301,7 +443,7 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
     return () => {
       console.log('[VideoPlayer] Component unmounting, pos:', positionRef.current);
       const { time, duration } = positionRef.current;
-      if (animeIdRef.current && time && duration && time > 0 && time / duration < 0.9) {
+      if (animeIdRef.current && time && duration && time > 0 && (duration - time) > 120) {
         const pathParts = window.location.pathname.split('/');
         const slug = pathParts[2] || '';
         const season = pathParts[3] || '1';
@@ -310,10 +452,11 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
         localStorage.setItem(saveKey, JSON.stringify({
           time: Math.floor(time),
           duration: Math.floor(duration),
-          updated: Date.now()
+          updatedAt: Date.now()
         }));
         console.log('[VideoPlayer] Saved on unmount:', time, 'key:', saveKey);
       }
+      pushServerData();
       cleanup();
     };
   }, [cleanup]);
@@ -330,11 +473,31 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
     }
   }, [showDropdown]);
 
-  const handleServerChange = (index: number) => {
+  const langGroups = useMemo(() => {
+    const groups: Record<string, {index: number; hoster: string; url: string}[]> = {};
+    links.forEach((link, i) => {
+      if (link.hasAds) return;
+      const lang = link.language || 'Unknown';
+      if (!groups[lang]) groups[lang] = [];
+      groups[lang].push({index: i, hoster: link.hoster, url: link.url});
+    });
+    return groups;
+  }, [links]);
+
+  const availableLangs = Object.keys(langGroups);
+
+  const handleServerChange = useCallback((index: number) => {
     setSelectedServer(index);
     setShowDropdown(false);
     setError(null);
-  };
+  }, []);
+
+  const handleLangChange = useCallback((lang: string) => {
+    const group = langGroups[lang];
+    if (!group || group.length === 0) return;
+    const best = group.find(l => l.url.includes('.m3u8')) || group[0];
+    handleServerChange(best.index);
+  }, [langGroups, handleServerChange]);
 
   if (links.length === 0) {
     return (
@@ -348,14 +511,15 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
   }
 
   const currentLink = links[selectedServer];
+  const currentLang = currentLink?.language ?? '';
   const currentHoster = currentLink ? currentLink.hoster.charAt(0).toUpperCase() + currentLink.hoster.slice(1) : '';
-  const currentLang = currentLink?.language === 'Ger-Dub' ? 'Ger-Dub' : currentLink?.language === 'Ger-Sub' ? 'Ger-Sub' : currentLink?.language ?? '';
 
   return (
     <div>
-      <div ref={containerRef} className="aspect-video bg-black rounded-lg overflow-hidden relative group">
-        <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-gray-400 bg-black/50 px-2 py-1 rounded">
-          ← → Seek • ↑ ↓ Volume • Space/K Play/Pause • F Fullscreen • M Mute
+      <div className="relative" data-player>
+        <div ref={containerRef} className="aspect-video bg-black rounded-lg overflow-hidden" />
+        <div className="absolute bottom-4 right-4 text-xs text-gray-400 bg-black/50 px-2 py-1 rounded pointer-events-none">
+          {'← → Seek • ↑ ↓ Volume • Space/K Play/Pause • F Fullscreen • M Mute'}
         </div>
       </div>
       {error && (
@@ -363,84 +527,36 @@ export default function VideoPlayer({ links, episodeTitle, animeId, seekTo: init
           {error}
         </div>
       )}
-      {links.length > 1 && (
-        <div className="mt-4 flex gap-2" ref={dropdownRef}>
-          <button
-            onClick={() => setShowDropdown(!showDropdown)}
-            className="flex items-center justify-between flex-1 px-4 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition text-sm"
-          >
-            <span>{language === 'de' ? 'Server:' : 'Server:'} <span className="font-medium">{currentHoster}</span></span>
-            <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${showDropdown ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-          <div className="relative">
-            <button
-              onClick={() => setShowSkipControls(!showSkipControls)}
-              className={`flex items-center gap-1 px-3 py-2 rounded text-sm text-white transition ${showSkipControls ? 'bg-purple-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" />
-              </svg>
-              {language === 'de' ? 'Skip' : 'Skip'}
-            </button>
-            {showSkipControls && (
-              <div className="absolute right-0 top-full mt-2 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-30 p-3 flex flex-col gap-2 min-w-[200px]">
-                <div className="text-xs text-gray-400">{language === 'de' ? 'Intro überspringen:' : 'Skip Intro:'}</div>
-                <div className="flex gap-1">
-                  <button onClick={() => skipToTime(90)} className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">90s</button>
-                  <button onClick={() => skipToTime(120)} className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">2min</button>
-                  <button onClick={() => skipToTime(150)} className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">2:30</button>
-                </div>
-                <div className="text-xs text-gray-400 mt-1">{language === 'de' ? 'Outro überspringen:' : 'Skip Outro:'}</div>
-                <button 
-                  onClick={() => {
-                    const video = containerRef.current?.querySelector('video');
-                    if (video && video.duration) {
-                      video.currentTime = Math.max(0, video.duration - 90);
-                    }
-                  }} 
-                  className="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs text-center"
-                >
-                  {language === 'de' ? '-90s vom Ende' : '-90s from end'}
-                </button>
-                <div className="text-xs text-gray-400 mt-1">{language === 'de' ? 'Manuell:' : 'Manual:'}</div>
-                <div className="flex gap-1">
-                  <button onClick={() => skipIntro(-30)} className="flex-1 px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs text-center">-30s</button>
-                  <button onClick={() => skipIntro(30)} className="flex-1 px-2 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-xs text-center">+30s</button>
-                </div>
-              </div>
-            )}
-          </div>
-          {showDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20 overflow-hidden">
-              {links.map((link, index) => {
-                const hosterName = link.hoster.charAt(0).toUpperCase() + link.hoster.slice(1);
-                const language = link.language === 'Ger-Dub' ? '🇩🇪 Ger-Dub' : link.language === 'Ger-Sub' ? '🇩🇪 Ger-Sub' : link.language ?? '';
+      {currentLink && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-500">
+            {currentHoster} · {currentLang} · {links[selectedServer]?.quality ?? '?'}
+          </span>
+        </div>
+      )}
+      {availableLangs.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2" ref={dropdownRef}>
+          {availableLangs.map((lang) => {
+            const isActive = currentLang === lang;
+            const label = lang === 'Ger-Dub' ? (language === 'de' ? '🇩🇪 Deutsch (Sync)' : '🇩🇪 German (Dub)')
+              : lang === 'Ger-Sub' ? (language === 'de' ? '🇯🇵 Japanisch (Sub)' : '🇯🇵 Japanese (Sub)')
+              : lang === 'Eng-Sub' ? (language === 'de' ? '🇬🇧 Englisch (Sub)' : '🇬🇧 English (Sub)')
+              : lang;
+            return (
+              <button
+                key={lang}
+                onClick={() => handleLangChange(lang)}
+                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+                  isActive
+                    ? 'bg-theme-primary text-white shadow-lg shadow-theme-primary'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
+                }`}
+              >
+                {label} <span className="text-xs opacity-60">({langGroups[lang].length})</span>
+              </button>
+            );
+          })}
 
-                return (
-                  <button
-                    key={index}
-                    onClick={() => handleServerChange(index)}
-                    className={`w-full flex items-center justify-between px-4 py-3 text-sm transition ${
-                      selectedServer === index
-                        ? 'bg-purple-600 text-white'
-                        : 'text-gray-300 hover:bg-gray-700'
-                    }`}
-                  >
-                    <span className="font-medium capitalize">{hosterName}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs opacity-75">{language}</span>
-                      <span className="text-xs bg-black/20 px-2 py-0.5 rounded">HD</span>
-                      {link.hasAds && (
-                        <span className="text-xs bg-yellow-600/80 px-2 py-0.5 rounded">Ads</span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
     </div>

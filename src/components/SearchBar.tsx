@@ -98,7 +98,7 @@ export default function SearchBar() {
           onChange={(e) => { setQuery(e.target.value); setIsOpen(true); }}
           onFocus={() => setIsOpen(true)}
           placeholder={placeholderText}
-          className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-purple-500 focus:outline-none placeholder-gray-500"
+          className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-theme-primary focus:outline-none placeholder-gray-500"
         />
       </form>
 
@@ -111,7 +111,7 @@ export default function SearchBar() {
             <button
               key={i}
               onClick={() => handleRecentClick(search)}
-              className="w-full flex items-center gap-2 px-4 py-2 hover:bg-gray-700 transition text-left"
+              className="w-full flex items-center gap-2 px-4 py-2 hover:bg-gray-700 focus-visible:bg-gray-700 transition text-left"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -134,15 +134,15 @@ export default function SearchBar() {
                 setIsOpen(false);
                 setQuery('');
               }}
-              className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-700 transition text-left"
+              className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-700 focus-visible:bg-gray-700 transition text-left"
             >
-              <img src={anime.coverImage.medium} alt="" className="w-10 h-14 object-cover rounded" />
+              <img src={anime.coverImage.medium} alt="" className="w-10 h-14 object-cover rounded" loading="lazy" />
               <span className="text-white text-sm truncate">{anime.title.english ?? anime.title.romaji}</span>
             </button>
           ))}
           <button
             onClick={handleSubmit}
-            className="w-full px-4 py-2 text-purple-400 text-sm hover:bg-gray-700 transition border-t border-gray-700"
+            className="w-full px-4 py-2 text-theme-primary text-sm hover:bg-gray-700 focus-visible:bg-gray-700 transition border-t border-gray-700"
           >
             {language === 'de' ? 'Alle Ergebnisse anzeigen' : 'View all results'}
           </button>

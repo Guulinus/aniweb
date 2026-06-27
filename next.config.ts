@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   compress: true,
   poweredByHeader: false,
-  serverExternalPackages: ['better-sqlite3'],
+  serverExternalPackages: ['jsdom'],
   images: {
     remotePatterns: [
       {
@@ -15,14 +15,18 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'img.anilist.co',
       },
+      {
+        protocol: 'https',
+        hostname: 'image.tmdb.org',
+      },
     ],
     minimumCacheTTL: 60 * 60 * 24 * 30,
-    formats: ['image/avif', 'image/webp'],
+    formats: ['image/webp'],
   },
   async headers() {
     return [
       {
-        source: '/:path*',
+        source: '/:path((?!api/).*)',
         headers: [
           {
             key: 'Cache-Control',
@@ -35,6 +39,7 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['react', 'react-dom', 'artplayer', 'hls.js'],
   },
+
 };
 
 export default nextConfig;

@@ -34,10 +34,8 @@ export async function GET(request: NextRequest) {
     // Fall back to AniList
     const data = await getPopularAnimeApi(1, perPage);
     return NextResponse.json({ ...data, source: 'anilist' }, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
-  } catch {
-    return NextResponse.json(
-      { error: 'Failed to fetch popular anime' },
-      { status: 500 },
-    );
+  } catch (err) {
+    console.error('[Popular] Failed:', err);
+    return NextResponse.json({ results: [], hasNextPage: false, error: 'Failed to fetch popular anime' });
   }
 }

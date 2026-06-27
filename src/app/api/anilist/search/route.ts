@@ -9,37 +9,16 @@ export async function GET(request: NextRequest) {
   const sort = request.nextUrl.searchParams.get('sort') ?? 'POPULARITY_DESC';
 
   try {
-    // If ID provided, first try local DB, then AniList
+    // If ID provided, always use AniList for full detail (relations, episodeThumbnails, etc.)
     if (id) {
       const idNum = parseInt(id);
       if (isNaN(idNum) || idNum <= 0) {
         return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
       }
-      // Try local DB first for speed
-      const localAnime = getAnimeByIdDb(idNum);
-      if (localAnime) {
-        return NextResponse.json({ 
-          results: [{
-            id: localAnime.id,
-            title: { romaji: localAnime.title_romaji, english: localAnime.title_english, native: localAnime.title_native },
-            coverImage: { large: localAnime.cover_image, medium: localAnime.cover_image },
-            bannerImage: localAnime.banner_image,
-            format: localAnime.format,
-            status: localAnime.status,
-            episodes: localAnime.episodes,
-            averageScore: localAnime.average_score,
-            year: localAnime.year,
-            genres: localAnime.genres ? JSON.parse(localAnime.genres) : [],
-            description: localAnime.description,
-            episodeThumbnails: localAnime.episode_thumbnails ? JSON.parse(localAnime.episode_thumbnails) : null,
-          }],
-          hasNextPage: false,
-          source: 'local'
-        });
-      }
-      // Fall back to AniList
       const anime = await getAnimeById(idNum);
-      return NextResponse.json({ results: [anime], hasNextPage: false, source: 'anilist' });
+      return NextResponse.json({ results: [anime], hasNextPage: false, source: 'anilist' }, {
+        headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' },
+      });
     }
 
     if (!query || query.length < 2) {
@@ -53,6 +32,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
           results: dbResults.map(a => ({
             id: a.id,
+            idMal: null,
             title: { romaji: a.title_romaji, english: a.title_english, native: a.title_native },
             coverImage: { large: a.cover_image, medium: a.cover_image },
             bannerImage: a.banner_image,

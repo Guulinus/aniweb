@@ -30,8 +30,16 @@ export function useWatchlist() {
       }
     }
 
+    function handleSyncComplete() {
+      setEntries(getWatchlist());
+    }
+
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    window.addEventListener('sync-complete', handleSyncComplete);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('sync-complete', handleSyncComplete);
+    };
   }, []);
 
   const add = useCallback((entry: Omit<WatchlistEntry, 'addedAt'>) => {
@@ -74,9 +82,10 @@ export function useWatchlist() {
   }, []);
 
   const updateProgress = useCallback((animeId: number, currentEpisode: number) => {
+    const now = Date.now();
     setEntries((prev) => {
       const updated = prev.map((e) =>
-        e.animeId === animeId ? { ...e, currentEpisode } : e
+        e.animeId === animeId ? { ...e, currentEpisode, lastWatched: now, updatedAt: now } : e
       );
       try {
         setWatchlist(updated);

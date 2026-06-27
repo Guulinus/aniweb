@@ -64,7 +64,7 @@ function SearchContent() {
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
+              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 focus-visible:bg-gray-700 transition"
             >
               Previous
             </button>
@@ -72,7 +72,7 @@ function SearchContent() {
             <button
               onClick={() => setPage(p => p + 1)}
               disabled={!hasNextPage}
-              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
+              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 focus-visible:bg-gray-700 transition"
             >
               Next
             </button>

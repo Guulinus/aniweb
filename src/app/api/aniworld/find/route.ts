@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await findAniworldSeries(title, year, englishTitle);
+    const result = await Promise.race([
+      findAniworldSeries(title, year, englishTitle),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Search timed out')), 30000)),
+    ]);
     return NextResponse.json(result);
   } catch (error) {
     console.error('[aniworld/find] Error:', error);

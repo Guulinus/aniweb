@@ -67,6 +67,7 @@ export function HoverPreviewProvider({ children }: { children: React.ReactNode }
               src={imageUrl}
               alt={title}
               className="w-full h-40 object-cover"
+              loading="lazy"
             />
           )}
           <div className="p-3">

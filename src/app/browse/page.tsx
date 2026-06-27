@@ -30,10 +30,19 @@ function useTranslations() {
       { value: 'OVA', label: 'OVA' },
       { value: 'ONA', label: 'ONA' },
     ],
+    seasonOptions: [
+      { value: '', label: language === 'de' ? 'Alle' : 'All' },
+      { value: 'WINTER', label: language === 'de' ? 'Winter' : 'Winter' },
+      { value: 'SPRING', label: language === 'de' ? 'Frühling' : 'Spring' },
+      { value: 'SUMMER', label: language === 'de' ? 'Sommer' : 'Summer' },
+      { value: 'FALL', label: language === 'de' ? 'Herbst' : 'Fall' },
+    ],
     browse: language === 'de' ? 'Durchsuchen' : 'Browse',
     sortBy: language === 'de' ? 'Sortieren nach' : 'Sort By',
     status: language === 'de' ? 'Status' : 'Status',
     format: language === 'de' ? 'Format' : 'Format',
+    season: language === 'de' ? 'Saison' : 'Season',
+    yearLabel: language === 'de' ? 'Jahr' : 'Year',
     page: language === 'de' ? 'Seite' : 'Page',
     nextPage: language === 'de' ? 'Nächste' : 'Next',
     previousPage: language === 'de' ? 'Vorherige' : 'Previous',
@@ -42,7 +51,7 @@ function useTranslations() {
 
 function BrowseContent() {
   const searchParams = useSearchParams();
-  const { sortOptions, statusOptions, formatOptions, browse, sortBy, status: statusLabel, format: formatLabel, page: pageLabel, nextPage, previousPage } = useTranslations();
+  const { sortOptions, statusOptions, formatOptions, seasonOptions, browse, sortBy, status: statusLabel, format: formatLabel, season: seasonLabel, yearLabel, page: pageLabel, nextPage, previousPage } = useTranslations();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -51,6 +60,8 @@ function BrowseContent() {
   const [status, setStatus] = useState(searchParams.get('status') ?? '');
   const [format, setFormat] = useState('');
   const [sort, setSort] = useState(searchParams.get('sort') ?? 'POPULARITY_DESC');
+  const [season, setSeason] = useState(searchParams.get('season') ?? '');
+  const [year, setYear] = useState(searchParams.get('year') ?? '');
 
   const fetchAnime = useCallback(async (pageNum: number) => {
     setLoading(true);
@@ -60,6 +71,8 @@ function BrowseContent() {
     params.set('sort', sort);
     if (status) params.set('status', status);
     if (format) params.set('format', format);
+    if (season) params.set('season', season);
+    if (year) params.set('year', year);
     selectedGenres.forEach(g => params.append('genre', g));
 
     try {
@@ -72,7 +85,7 @@ function BrowseContent() {
     } finally {
       setLoading(false);
     }
-  }, [sort, status, format, selectedGenres]);
+  }, [sort, status, format, season, year, selectedGenres]);
 
   useEffect(() => { fetchAnime(page); }, [fetchAnime, page]);
 
@@ -121,6 +134,30 @@ function BrowseContent() {
           </div>
 
           <div>
+            <label className="text-sm font-semibold text-gray-400 block mb-1">{seasonLabel}</label>
+            <select
+              value={season}
+              onChange={(e) => { setSeason(e.target.value); setPage(1); }}
+              className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm"
+            >
+              {seasonOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-semibold text-gray-400 block mb-1">{yearLabel}</label>
+            <input
+              type="number"
+              value={year}
+              onChange={(e) => { setYear(e.target.value); setPage(1); }}
+              placeholder="2026"
+              className="bg-gray-800 text-white border border-gray-700 rounded px-3 py-2 text-sm w-24"
+            />
+          </div>
+
+          <div>
             <label className="text-sm font-semibold text-gray-400 block mb-1">{sortBy}</label>
             <select
               value={sort}
@@ -144,7 +181,7 @@ function BrowseContent() {
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
+              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 focus-visible:bg-gray-700 transition"
             >
               {previousPage}
             </button>
@@ -152,7 +189,7 @@ function BrowseContent() {
             <button
               onClick={() => setPage(p => p + 1)}
               disabled={!hasNextPage}
-              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
+              className="px-4 py-2 bg-gray-800 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 focus-visible:bg-gray-700 transition"
             >
               {nextPage}
             </button>

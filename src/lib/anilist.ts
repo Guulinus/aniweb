@@ -2,25 +2,33 @@ import type { AnimeBasic, AnimeDetail, SearchResponse, BrowseResponse } from '@/
 
 const ANILIST_API = 'https://graphql.anilist.co';
 
-async function anilistQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
-  const response = await fetch(ANILIST_API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ query, variables }),
-    next: { revalidate: 300 }, // 5 min cache
-  });
+async function anilistQuery<T>(query: string, variables?: Record<string, unknown>, retries = 3): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const response = await fetch(ANILIST_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      next: { revalidate: 300 },
+    });
 
-  if (!response.ok) {
+    if (response.ok) {
+      const data = await response.json();
+      if (data.errors?.length > 0) {
+        throw new Error(`AniList GraphQL error: ${data.errors[0].message}`);
+      }
+      return data.data;
+    }
+
+    if (response.status === 429 && attempt < retries) {
+      const delay = attempt * 2000;
+      await new Promise(r => setTimeout(r, delay));
+      continue;
+    }
+
     throw new Error(`AniList API error: ${response.status}`);
   }
 
-  const data = await response.json();
-
-  if (data.errors?.length > 0) {
-    throw new Error(`AniList GraphQL error: ${data.errors[0].message}`);
-  }
-
-  return data.data;
+  throw new Error('AniList API error: max retries exceeded');
 }
 
 function mapMediaToBasic(media: any): AnimeBasic {
@@ -36,6 +44,7 @@ function mapMediaToBasic(media: any): AnimeBasic {
   
   return {
     id: media.id,
+    idMal: media.idMal ?? null,
     title: {
       romaji: media.title?.romaji ?? '',
       english: media.title?.english ?? null,
@@ -63,7 +72,7 @@ export async function getTrendingAnime(page = 1, perPage = 20): Promise<BrowseRe
       Page(page: $page, perPage: $perPage) {
         pageInfo { currentPage hasNextPage lastPage perPage total }
         media(type: ANIME, sort: [TRENDING_DESC, POPULARITY_DESC], isAdult: false) {
-          id title { romaji english native } coverImage { large medium }
+          id idMal title { romaji english native } coverImage { large medium }
           bannerImage
           format status episodes averageScore genres
           startDate { year }
@@ -113,7 +122,7 @@ export async function searchAnime(queryStr: string, page = 1, perPage = 20, sort
       Page(page: $page, perPage: $perPage) {
         pageInfo { hasNextPage }
         media(search: $search, type: ANIME, isAdult: false, sort: $sort) {
-          id title { romaji english native } coverImage { large medium }
+          id idMal title { romaji english native } coverImage { large medium }
           bannerImage
           format status episodes averageScore genres
           startDate { year }
@@ -135,7 +144,7 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
   const query = `
     query ($id: Int) {
       Media(id: $id, type: ANIME) {
-        id title { romaji english native } coverImage { large medium }
+        id idMal title { romaji english native } coverImage { large medium }
         format status episodes averageScore genres
         startDate { year }
         description bannerImage
@@ -143,7 +152,7 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
         relations {
           edges {
             relationType
-            node { id title { romaji english } }
+            node { id title { romaji english } format coverImage { large medium } episodes bannerImage startDate { year } }
           }
         }
       }
@@ -195,8 +204,9 @@ export async function browseAnime(options: {
   sort?: string[];
   format?: string;
   year?: number;
+  season?: string;
 }): Promise<BrowseResponse> {
-  const { page = 1, perPage = 20, genres, status, sort, format, year } = options;
+  const { page = 1, perPage = 20, genres, status, sort, format, year, season } = options;
 
   const sortValue = sort ?? ['POPULARITY_DESC'];
   const variables: Record<string, any> = { page, perPage, sort: sortValue, isAdult: false };
@@ -205,21 +215,22 @@ export async function browseAnime(options: {
   if (status) variables.status = status;
   if (format) variables.format = format;
   if (year) variables.seasonYear = year;
+  if (season) variables.season = season;
 
   const query = `
     query (
       $page: Int, $perPage: Int, $sort: [MediaSort], $isAdult: Boolean,
       $genres: [String], $status: MediaStatus, $format: MediaFormat,
-      $seasonYear: Int
+      $seasonYear: Int, $season: MediaSeason
     ) {
       Page(page: $page, perPage: $perPage) {
         pageInfo { currentPage hasNextPage lastPage perPage total }
         media(
           type: ANIME, sort: $sort, isAdult: $isAdult,
           genre_in: $genres, status: $status, format: $format,
-          seasonYear: $seasonYear
+          seasonYear: $seasonYear, season: $season
         ) {
-          id title { romaji english native } coverImage { large medium }
+          id idMal title { romaji english native } coverImage { large medium }
           bannerImage
           format status episodes averageScore genres
           startDate { year }

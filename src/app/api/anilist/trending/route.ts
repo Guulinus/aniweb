@@ -33,10 +33,8 @@ export async function GET(request: NextRequest) {
     
     const data = await getTrendingAnimeApi(1, perPage);
     return NextResponse.json({ ...data, source: 'anilist' }, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
-  } catch {
-    return NextResponse.json(
-      { error: 'Failed to fetch trending anime' },
-      { status: 500 },
-    );
+  } catch (err) {
+    console.error('[Trending] Failed:', err);
+    return NextResponse.json({ results: [], hasNextPage: false, error: 'Failed to fetch trending anime' });
   }
 }

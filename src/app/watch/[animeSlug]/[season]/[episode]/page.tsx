@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, use, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import VideoPlayer from '@/components/VideoPlayer';
@@ -33,7 +33,10 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
   const [error, setError] = useState<string | null>(null);
   const [animeTitle, setAnimeTitle] = useState<string | null>(null);
   const [coverImage, setCoverImage] = useState<string>('');
+  const [idMal, setIdMal] = useState<number | null>(null);
+  const [skipData, setSkipData] = useState<{startTime: number; endTime: number; type: string} | null | undefined>(undefined);
   const [seekTo, setSeekTo] = useState<number | undefined>(undefined);
+  const [completed, setCompleted] = useState(false);
 
   const animeTitleRef = useRef(animeTitle);
   const coverImageRef = useRef(coverImage);
@@ -50,10 +53,37 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
 
   useEffect(() => {
     let cancelled = false;
-    if (!animeId) return;
-    fetch(`/api/anilist/search?id=${animeId}`)
+    if (!idMal || !episodeNum) {
+      setSkipData(undefined);
+      return;
+    }
+    console.log('[Watch] Fetching skip data for idMal=', idMal, 'ep=', episodeNum);
+    fetch(`/api/aniskip/${idMal}/${episodeNum}`)
       .then(r => r.json())
-      .then((data) => {
+      .then(data => {
+        if (cancelled) return;
+        const op = data.results?.find((r: any) => (r.skipType || r.type) === 'op');
+        if (op) {
+          const st = { startTime: op.interval.startTime, endTime: op.interval.endTime, type: 'op' };
+          console.log('[Watch] Skip data found:', st);
+          setSkipData(st);
+        } else {
+          console.log('[Watch] No OP skip data');
+          setSkipData(null);
+        }
+      })
+      .catch(() => setSkipData(null));
+    return () => { cancelled = true; };
+  }, [idMal, episodeNum]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!animeId) return;
+    
+    const fetchMal = async () => {
+      try {
+        const res = await fetch(`/api/anilist/search?id=${animeId}`);
+        const data = await res.json();
         if (cancelled) return;
         if (data.results?.[0]) {
           const a = data.results[0];
@@ -61,11 +91,28 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
           const cleanTitle = rawTitle.replace(/\s*(Season\s*\d+|Part\s*\d+|:.*|-.*)$/i, '').trim();
           setAnimeTitle(cleanTitle || rawTitle);
           setCoverImage(a.coverImage?.large ?? a.coverImage?.medium ?? '');
+
+          if (seasonNum <= 1) {
+            console.log('[Watch] Season 1, using main idMal:', a.idMal);
+            setIdMal(a.idMal ?? null);
+          } else {
+            try {
+              console.log('[Watch] Fetching season-mal for season:', seasonNum, 'animeId:', animeId);
+              const seasonRes = await fetch(`/api/anilist/season-mal?animeId=${animeId}&season=${seasonNum}`);
+              const seasonData = await seasonRes.json();
+              console.log('[Watch] Season MAL result:', seasonData);
+              setIdMal(seasonData.malId ?? a.idMal ?? null);
+            } catch (e) {
+              console.log('[Watch] Season MAL fetch failed, falling back to main idMal:', a.idMal);
+              setIdMal(a.idMal ?? null);
+            }
+          }
         }
-      })
-      .catch(() => {});
+      } catch {}
+    };
+    fetchMal();
     return () => { cancelled = true; };
-  }, [animeId]);
+  }, [animeId, seasonNum]);
 
   useEffect(() => {
     if (!animeSlug || isNaN(seasonNum) || isNaN(episodeNum)) return;
@@ -105,7 +152,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
       }
 
       const epId = `${slug}/${seasonNum}/${episodeNum}`;
-      fetch(`/api/aniworld/episode/${encodeURIComponent(epId)}`)
+      fetch(`/api/aniworld/episode/${epId}`)
         .then(r => r.json())
         .then((data) => {
           if (cancelled) return;
@@ -115,26 +162,20 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
             // Use the same slug from the URL path that we use for saving
             const pathSlug = animeSlug;
             const savedKey = `watchPosition:${animeId}:${pathSlug}:${seasonNum}:${episodeNum}`;
-            console.log('[Watch] Looking for saved position with key:', savedKey);
             const savedData = localStorage.getItem(savedKey);
-            console.log('[Watch] Saved data found:', savedData);
+            let foundSeek = false;
             if (savedData) {
               try {
                 const parsed = JSON.parse(savedData);
-                console.log('[Watch] Parsed saved data:', parsed);
-                const timeSinceSave = Date.now() - parsed.updated;
+                const timeSinceSave = Date.now() - (parsed.updatedAt || parsed.updated || 0);
                 const progress = parsed.time / parsed.duration;
-                console.log('[Watch] Time since save:', timeSinceSave, 'progress:', progress);
                 if (timeSinceSave < 86400000 && parsed.time > 0 && progress < 0.9) {
-                  console.log('[Watch] Setting seekTo to:', parsed.time);
                   setSeekTo(parsed.time);
-                } else {
-                  console.log('[Watch] Skipping - too old or at end');
+                  foundSeek = true;
                 }
-              } catch (e) {
-                console.log('[Watch] Error parsing saved data:', e);
-              }
+              } catch {}
             }
+            if (!foundSeek) setSeekTo(undefined);
 
             const history = safeParseJSON(localStorage.getItem('watchHistory') ?? '[]', []);
             const entry = { animeSlug, animeId, season: seasonNum, episode: episodeNum, title: animeTitleRef.current, timestamp: Date.now() };
@@ -156,7 +197,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
                 const current = JSON.parse(localStorage.getItem('watchlist') ?? '[]');
                 const updated = current.map((e: any) => 
                   e.animeId === animeId 
-                    ? { ...e, aniworldSlug: slug, lastWatched: Date.now(), currentSeason: seasonNum, coverImage: coverImageRef.current || e.coverImage } 
+                    ? { ...e, aniworldSlug: slug, lastWatched: Date.now(), currentSeason: seasonNum, coverImage: coverImageRef.current || e.coverImage, updatedAt: Date.now() } 
                     : e
                 );
                 localStorage.setItem('watchlist', JSON.stringify(updated));
@@ -172,6 +213,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
                 aniworldSlug: slug ?? undefined,
                 lastWatched: Date.now(),
                 currentSeason: seasonNum,
+                updatedAt: Date.now(),
               });
             }
           } else {
@@ -189,10 +231,12 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
     return () => { cancelled = true; };
   }, [animeSlug, seasonNum, episodeNum, animeId, awSlugFromUrl]);
 
+  const nextEpisodeLink = `/watch/${animeSlug}/${seasonNum}/${episodeNum + 1}?id=${animeId}${awSlugFromUrl ? `&awSlug=${encodeURIComponent(awSlugFromUrl)}` : ''}`;
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6">
       <div className="mb-4">
-        <Link href={`/anime/${animeSlug}?id=${animeId}`} className="text-purple-400 hover:text-purple-300 text-sm">
+        <Link href={`/anime/${animeSlug}?id=${animeId}`} className="text-theme-primary hover:text-theme-hover focus-visible:text-theme-hover text-sm">
           ← Back to anime
         </Link>
       </div>
@@ -211,14 +255,29 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
             <p className="text-lg">{error}</p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 transition"
+              className="mt-4 px-4 py-2 bg-theme-primary text-white rounded-lg hover:bg-theme-hover focus-visible:bg-theme-hover transition"
             >
               Retry
             </button>
           </div>
         </div>
       ) : (
-        <VideoPlayer links={links} episodeTitle={episodeTitle} animeId={animeId} seekTo={seekTo} />
+        <>
+          <VideoPlayer links={links} episodeTitle={episodeTitle} animeId={animeId} idMal={idMal} episodeNum={episodeNum} seekTo={seekTo} skipData={skipData} onComplete={() => setCompleted(true)} nextEpisodeUrl={nextEpisodeLink} />
+          {completed && nextEpisodeLink && (
+            <div className="mt-4 p-4 bg-theme-soft border border-theme-soft rounded-lg">
+              <p className="text-sm text-theme-primary mb-2">
+                {language === 'de' ? 'Episode abgeschlossen!' : 'Episode completed!'}
+              </p>
+              <Link
+                href={nextEpisodeLink}
+                className="inline-block px-4 py-2 bg-theme-primary hover:bg-theme-hover focus-visible:bg-theme-hover text-white rounded-lg font-medium transition"
+              >
+                {language === 'de' ? 'Nächste Folge →' : 'Next Episode →'}
+              </Link>
+            </div>
+          )}
+        </>
       )}
 
       <div className="flex justify-between mt-6">
@@ -226,7 +285,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
           href={`/watch/${animeSlug}/${seasonNum}/${episodeNum - 1}?id=${animeId}${awSlugFromUrl ? `&awSlug=${encodeURIComponent(awSlugFromUrl)}` : ''}`}
           className={`px-4 py-2 rounded-lg transition ${
             episodeNum > 1
-              ? 'bg-gray-800 text-white hover:bg-gray-700'
+              ? 'bg-gray-800 text-white hover:bg-gray-700 focus-visible:bg-gray-700'
               : 'bg-gray-800/50 text-gray-600 cursor-not-allowed'
           }`}
           onClick={(e) => { if (episodeNum <= 1) e.preventDefault(); }}
@@ -235,7 +294,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
         </Link>
         <Link
           href={`/watch/${animeSlug}/${seasonNum}/${episodeNum + 1}?id=${animeId}${awSlugFromUrl ? `&awSlug=${encodeURIComponent(awSlugFromUrl)}` : ''}`}
-          className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition"
+          className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 focus-visible:bg-gray-700 transition"
         >
           Next Episode →
         </Link>
@@ -247,12 +306,11 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
 export default function WatchPage({
   params,
 }: {
-  params: Promise<{ animeSlug: string; season: string; episode: string }>;
+  params: { animeSlug: string; season: string; episode: string };
 }) {
-  const { animeSlug, season, episode } = use(params);
   return (
     <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-6 text-gray-400">Loading...</div>}>
-      <WatchContent animeSlug={animeSlug} season={season} episode={episode} />
+      <WatchContent animeSlug={params.animeSlug} season={params.season} episode={params.episode} />
     </Suspense>
   );
 }

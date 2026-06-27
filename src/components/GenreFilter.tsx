@@ -30,8 +30,8 @@ export default function GenreFilter({ selectedGenres, onToggle }: GenreFilterPro
           onClick={() => onToggle(genre)}
           className={`px-3 py-1 text-sm rounded-full border transition ${
             selectedGenres.includes(genre)
-              ? 'bg-purple-600 border-purple-500 text-white'
-              : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500'
+              ? 'bg-theme-primary border-theme-primary text-white'
+              : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500 focus-visible:border-gray-500'
           }`}
         >
           {genre}

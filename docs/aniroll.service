@@ -1,6 +1,7 @@
 [Unit]
 Description=AniRoll Anime Streaming Server
 After=network.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -8,7 +9,8 @@ User=pi
 WorkingDirectory=/home/pi/aniweb
 Environment=HOST=0.0.0.0
 Environment=PORT=3000
-ExecStart=/usr/bin/node /home/pi/aniweb/node_modules/next/dist/bin/next start
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npx tsx /home/pi/aniweb/scripts/start-server.ts
 Restart=always
 RestartSec=10
 

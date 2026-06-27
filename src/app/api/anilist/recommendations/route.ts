@@ -1,0 +1,72 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const ANILIST_API = 'https://graphql.anilist.co';
+
+const query = `
+  query ($id: Int) {
+    Media(id: $id) {
+      recommendations(perPage: 12, sort: [RATING_DESC, ID_DESC]) {
+        nodes {
+          mediaRecommendation {
+            id
+            idMal
+            title { romaji english native }
+            coverImage { large medium }
+            bannerImage
+            format
+            status
+            episodes
+            averageScore
+            genres
+            startDate { year }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export async function GET(request: NextRequest) {
+  const id = request.nextUrl.searchParams.get('id');
+  if (!id) {
+    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  }
+
+  try {
+    const res = await fetch(ANILIST_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables: { id: parseInt(id) } }),
+      next: { revalidate: 86400 },
+    });
+    const data = await res.json();
+    const nodes = data.data?.Media?.recommendations?.nodes ?? [];
+    const results = nodes
+      .map((n: any) => n.mediaRecommendation)
+      .filter(Boolean)
+      .map((m: any) => ({
+        id: m.id,
+        idMal: m.idMal ?? null,
+        title: {
+          romaji: m.title?.romaji ?? '',
+          english: m.title?.english ?? null,
+          native: m.title?.native ?? null,
+        },
+        coverImage: {
+          large: m.coverImage?.large ?? '',
+          medium: m.coverImage?.medium ?? '',
+        },
+        bannerImage: m.bannerImage ?? null,
+        format: m.format ?? 'UNKNOWN',
+        status: m.status ?? 'UNKNOWN',
+        episodes: m.episodes ?? null,
+        averageScore: m.averageScore ?? null,
+        year: m.startDate?.year ?? null,
+        genres: m.genres ?? [],
+      }));
+
+    return NextResponse.json({ results });
+  } catch {
+    return NextResponse.json({ results: [] });
+  }
+}

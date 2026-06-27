@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# user data
+data/auth.json
+data/user_*.json
+data/avatars/
+
+# generated config
+next.config.js
+postcss.config.js
+tailwind.config.js
+aniweb/
