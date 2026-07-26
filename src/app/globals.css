@@ -153,3 +153,14 @@ button, a, select, input[type="submit"], input[type="button"] {
 .tag-btn, .btn-xs, [class*="text-xs"][class*="px-2"] {
   min-height: auto;
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loadingBar {
+  0% { width: 0%; margin-left: 0; }
+  50% { width: 60%; margin-left: 20%; }
+  100% { width: 0%; margin-left: 100%; }
+}

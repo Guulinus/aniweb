@@ -1,92 +1,94 @@
-const TMDB_API = 'https://api.themoviedb.org/3';
-export const TMDB_IMG_BASE = 'https://image.tmdb.org/t/p/w500';
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_API_KEY = '7a6f6473c46188721c31804f166eb53d';
+const TMDB_IMG_BASE = 'https://image.tmdb.org/t/p/w500';
 
-export type TmdbSeasonThumbnails = Record<number, Record<number, string>>;
-
-function getApiKey(): string {
-  const key = process.env.TMDB_API_KEY;
-  if (!key) throw new Error('TMDB_API_KEY environment variable not set');
-  return key;
+export interface TmdbMovie {
+  title: string;
+  slug: string;
+  posterImage: string;
+  year: number | null;
 }
 
-async function tmdbFetch<T>(path: string): Promise<T | null> {
+export async function searchTmdbMovie(query: string): Promise<TmdbMovie[]> {
   try {
     const res = await fetch(
-      `${TMDB_API}${path}${path.includes('?') ? '&' : '?'}api_key=${getApiKey()}&language=de-DE`,
-      { cache: 'no-store', signal: AbortSignal.timeout(15000) }
+      `${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&language=de-DE`
     );
-    if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json();
+
+    return (data.results ?? []).slice(0, 10).map((m: any) => ({
+      title: m.title || m.original_title,
+      slug: (m.title || m.original_title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+      posterImage: m.poster_path ? `${TMDB_IMG_BASE}${m.poster_path}` : '',
+      year: m.release_date ? parseInt(m.release_date.substring(0, 4)) : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getTmdbMovieTrailer(query: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&language=de-DE`
+    );
+    const data = await res.json();
+    const movie = data.results?.[0];
+    if (!movie) return null;
+
+    const videoRes = await fetch(
+      `${TMDB_BASE}/movie/${movie.id}/videos?api_key=${TMDB_API_KEY}&language=de-DE`
+    );
+    const videoData = await videoRes.json();
+    const trailer = videoData.results?.find(
+      (v: any) => v.type === 'Trailer' && v.site === 'YouTube'
+    ) || videoData.results?.find(
+      (v: any) => v.site === 'YouTube'
+    );
+
+    return trailer ? `https://www.youtube.com/embed/${trailer.key}` : null;
   } catch {
     return null;
   }
 }
 
-interface TmdbSearchResult {
-  id: number;
-  name: string;
-  first_air_date: string | null;
-}
-
-interface TmdbEpisode {
-  episode_number: number;
-  still_path: string | null;
-  name: string;
-}
-
-interface TmdbSeasonResult {
-  episodes: TmdbEpisode[] | null;
-}
-
-function buildSearchQueries(title: string): string[] {
-  const queries: string[] = [title];
-  const cleaned = title.replace(/\s*\([^)]*\)\s*/g, '').trim();
-  if (cleaned !== title) queries.push(cleaned);
-  const primary = title.split(/[-:]/)[0].trim();
-  if (primary !== title) queries.push(primary);
-  return [...new Set(queries)];
-}
-
-export async function searchTmdbId(romajiTitle: string, englishTitle?: string | null): Promise<number | null> {
-  const allTitles = buildSearchQueries(romajiTitle);
-  if (englishTitle) allTitles.push(...buildSearchQueries(englishTitle));
-
-  for (const query of allTitles) {
-    if (query.length < 2) continue;
-    const result = await tmdbFetch<{ results: TmdbSearchResult[] }>(
-      `/search/tv?query=${encodeURIComponent(query)}`
-    );
-    if (result?.results?.length) {
-      return result.results[0].id;
-    }
+export async function searchTmdbId(romaji: string, english?: string | null): Promise<number | null> {
+  for (const title of [romaji, english].filter(Boolean) as string[]) {
+    try {
+      const res = await fetch(
+        `${TMDB_BASE}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`
+      );
+      const data = await res.json();
+      if (data.results?.length > 0) {
+        return data.results[0].id;
+      }
+    } catch {}
   }
   return null;
 }
 
-export async function getTmdbSeasonThumbnails(
-  tmdbId: number,
-  seasonNumbers: number[]
-): Promise<TmdbSeasonThumbnails> {
-  const result: TmdbSeasonThumbnails = {};
+export async function getTmdbSeasonThumbnails(tmdbId: number, seasons: number[]): Promise<Record<number, Record<number, string>>> {
+  const thumbnails: Record<number, Record<number, string>> = {};
 
-  await Promise.all(
-    seasonNumbers.map(async (sn) => {
-      const seasonData = await tmdbFetch<TmdbSeasonResult>(
-        `/tv/${tmdbId}/season/${sn}`
+  for (const seasonNum of seasons) {
+    try {
+      const res = await fetch(
+        `${TMDB_BASE}/tv/${tmdbId}/season/${seasonNum}?api_key=${TMDB_API_KEY}&language=de-DE`
       );
-      if (seasonData?.episodes) {
+      const data = await res.json();
+      if (data.episodes?.length > 0) {
         const epThumbs: Record<number, string> = {};
-        for (const ep of seasonData.episodes) {
+        for (const ep of data.episodes) {
           if (ep.still_path) {
-            epThumbs[ep.episode_number] = TMDB_IMG_BASE + ep.still_path;
+            epThumbs[ep.episode_number] = `${TMDB_IMG_BASE}${ep.still_path}`;
           }
         }
         if (Object.keys(epThumbs).length > 0) {
-          result[sn] = epThumbs;
+          thumbnails[seasonNum] = epThumbs;
         }
       }
-    })
-  );
+    } catch {}
+  }
 
-  return result;
+  return thumbnails;
 }

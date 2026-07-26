@@ -11,7 +11,7 @@ const query = `
             id
             idMal
             title { romaji english native }
-            coverImage { large medium }
+            coverImage { extraLarge large medium }
             bannerImage
             format
             status
@@ -53,8 +53,8 @@ export async function GET(request: NextRequest) {
           native: m.title?.native ?? null,
         },
         coverImage: {
-          large: m.coverImage?.large ?? '',
-          medium: m.coverImage?.medium ?? '',
+          large: m.coverImage?.extraLarge ?? m.coverImage?.large ?? '',
+          medium: m.coverImage?.large ?? m.coverImage?.medium ?? '',
         },
         bannerImage: m.bannerImage ?? null,
         format: m.format ?? 'UNKNOWN',

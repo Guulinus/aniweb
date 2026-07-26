@@ -1,11 +1,11 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   output: 'standalone',
   compress: true,
   poweredByHeader: false,
-  serverExternalPackages: ['jsdom'],
+  serverExternalPackages: ['jsdom', 'cheerio'],
   images: {
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
@@ -19,8 +19,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'image.tmdb.org',
       },
+      {
+        protocol: 'https',
+        hostname: 'media.kitsu.io',
+      },
     ],
-    minimumCacheTTL: 60 * 60 * 24 * 30,
     formats: ['image/webp'],
   },
   async headers() {
@@ -39,7 +42,6 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['react', 'react-dom', 'artplayer', 'hls.js'],
   },
-
 };
 
 export default nextConfig;

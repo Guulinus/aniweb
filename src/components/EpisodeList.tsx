@@ -130,7 +130,7 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
             <button
               key={season.seasonNumber}
               onClick={() => setActiveSeason(season.seasonNumber)}
-              className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+              className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center ${
                 isActive
                   ? 'bg-theme-primary text-white'
                   : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700 hover:text-white focus-visible:bg-gray-700 focus-visible:text-white'
@@ -143,7 +143,7 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
         {movies && movies.length > 0 && (
           <button
             onClick={() => setActiveSeason(-1)}
-            className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+            className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center ${
               activeSeason === -1
                 ? 'bg-theme-primary text-white'
                 : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700 hover:text-white focus-visible:bg-gray-700 focus-visible:text-white'

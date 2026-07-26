@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation';
 import EpisodeList from '@/components/EpisodeList';
 import RelatedAnime from '@/components/RelatedAnime';
 import RecommendationsRow from '@/components/RecommendationsRow';
-import StarRating from '@/components/StarRating';
 import type { AnimeDetail, AniworldSeason, RelatedMovie } from '@/types';
 import { toSlug } from '@/lib/slug';
 import { useWatchlist } from '@/hooks/useWatchlist';
@@ -133,10 +132,13 @@ function AnimeDetailContent({ slug }: { slug: string }) {
         const merged: Record<number, string> = { ...anime.episodeThumbnails };
 
         for (const season of seasons) {
-          const tmdbSeason = data.thumbnails[season.seasonNumber] as Record<string, string> | undefined;
+          const tmdbSeason = data.thumbnails[season.seasonNumber] as Record<string, Record<number, string>> | undefined;
           if (tmdbSeason) {
-            for (const epNum of Object.keys(tmdbSeason)) {
-              merged[globalOffset + parseInt(epNum)] = tmdbSeason[epNum];
+            for (const [epNumStr, epThumbUrl] of Object.entries(tmdbSeason)) {
+              const epNum = parseInt(epNumStr);
+              if (typeof epThumbUrl === 'string') {
+                merged[globalOffset + epNum] = epThumbUrl;
+              }
             }
           }
           globalOffset += season.episodes.length;
@@ -228,7 +230,6 @@ function AnimeDetailContent({ slug }: { slug: string }) {
 
   const watchSeason = currentEntry?.currentSeason ?? 1;
   const watchEpisode = currentEntry?.currentEpisode ?? 1;
-  const score = anime.averageScore ? (anime.averageScore / 10).toFixed(1) : null;
 
   return (
     <div className="relative">
@@ -264,14 +265,6 @@ function AnimeDetailContent({ slug }: { slug: string }) {
           {/* Info */}
           <div className="flex-1 pt-2 md:pt-16">
             <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-300 mb-3">
-              {score && (
-                <span className="flex items-center gap-1 px-2 py-0.5 bg-black/40 rounded">
-                  <svg className="w-3.5 h-3.5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                  </svg>
-                  {score}
-                </span>
-              )}
               {anime.format && <span className="px-2 py-0.5 bg-black/40 rounded uppercase">{anime.format}</span>}
               {anime.episodes && <span className="px-2 py-0.5 bg-black/40 rounded">{anime.episodes} EP</span>}
               {anime.year && <span className="px-2 py-0.5 bg-black/40 rounded">{anime.year}</span>}
@@ -289,18 +282,14 @@ function AnimeDetailContent({ slug }: { slug: string }) {
                 <a
                   key={genre}
                   href={`/browse?genre=${encodeURIComponent(genre)}`}
-                  className="px-3 py-1 bg-white/10 hover:bg-white/20 transition text-gray-200 text-sm rounded-full"
+                  className="px-3 py-1 bg-white/10 hover:bg-white/20 transition text-gray-200 text-sm rounded-full flex items-center"
                 >
                   {genre}
                 </a>
               ))}
             </div>
 
-            {/* Rating + Actions */}
-            <div className="flex flex-wrap items-center gap-3 mb-5">
-              <StarRating animeId={anime.id} size="md" />
-            </div>
-
+            {/* Actions */}
             <div className="flex flex-wrap gap-3 mb-6">
               <a
                 href={`/watch/${displaySlug}/${watchSeason}/${watchEpisode}?id=${anime.id}`}
@@ -337,7 +326,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill={inWatchlist ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d={inWatchlist ? "M5 13l4 4L19 7" : "M12 4v16m8-8H4"} />
                 </svg>
-                {inWatchlist ? `✓ ${getStatusLabel()}` : (language === 'de' ? 'Merkliste' : 'Watchlist')}
+                {inWatchlist ? getStatusLabel() : (language === 'de' ? 'Merkliste' : 'Watchlist')}
               </button>
             </div>
 

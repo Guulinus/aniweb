@@ -1,25 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import HorizontalAnimeSection from '@/components/HorizontalAnimeSection';
+import PosterSection from '@/components/PosterSection';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { useLanguage } from '@/hooks/useLanguage';
 import type { AnimeBasic } from '@/types';
 
-function dedupe(anime: AnimeBasic[], exclude: Set<number>): AnimeBasic[] {
-  return anime.filter(a => !exclude.has(a.id));
-}
-
 function SectionHeader({ title, href, lang }: { title: string; href?: string; lang: string }) {
   return (
-    <div className="flex items-center justify-between mb-6 group">
+    <div className="flex items-center justify-between mb-6 group/section">
       <div className="flex items-center gap-3">
         <div className="w-1 h-6 bg-theme-primary rounded-full flex-shrink-0" />
-        <h2 className="text-xl md:text-2xl font-bold text-white">{title}</h2>
+        <h2 className="text-lg md:text-xl font-bold text-white">{title}</h2>
       </div>
       {href && (
-        <Link href={href} className="text-sm text-gray-400 hover:text-theme-primary focus-visible:text-theme-primary transition flex items-center gap-1">
+        <Link href={href} className="text-sm text-gray-400 hover:text-theme-primary focus-visible:text-theme-primary transition flex items-center gap-1 opacity-0 group-hover/section:opacity-100">
           {lang === 'de' ? 'Alle anzeigen' : 'View All'}
           <span className="text-lg leading-none">→</span>
         </Link>
@@ -34,20 +30,10 @@ export default function HomePage() {
     ? { main: 'Jeder Anime hier kostenlos', sub: 'Deutsche Synchronisation & japanische Originalversion' }
     : { main: 'Every anime here for free', sub: 'German Dub & Japanese Original' };
 
-  const [allShownIds, setAllShownIds] = useState<Set<number>>(new Set());
-
-  const onIdsSeen = useCallback((ids: number[]) => {
-    setAllShownIds(prev => {
-      const next = new Set(prev);
-      ids.forEach(id => next.add(id));
-      return next;
-    });
-  }, []);
-
   return (
-    <div className="max-w-7xl mx-auto px-4 pb-8">
+    <div className="max-w-[1400px] mx-auto px-4 lg:px-8 pb-8">
       {/* Hero */}
-      <div className="relative -mt-8 -mx-4 overflow-hidden mb-14">
+      <div className="relative -mx-4 lg:-mx-8 overflow-hidden mb-14 pt-14 md:pt-16">
         <div className="relative h-80 md:h-[420px]">
           <div
             className="absolute inset-0 bg-cover bg-center"
@@ -56,7 +42,7 @@ export default function HomePage() {
           <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0f] via-[#0a0a0f]/70 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#0a0a0f] to-transparent" />
 
-          <div className="relative h-full flex flex-col items-start justify-center px-8 md:px-16 z-10 max-w-2xl">
+          <div className="relative h-full flex flex-col items-start justify-end pb-12 px-8 md:px-16 z-10 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-theme-soft border-theme-soft text-theme-primary text-xs font-medium mb-4">
               <span className="w-1.5 h-1.5 bg-theme-primary rounded-full animate-pulse" />
               {language === 'de' ? 'Kostenlos streamen' : 'Free streaming'}
@@ -86,13 +72,42 @@ export default function HomePage() {
       </div>
 
       <ResumeWatchingSection />
-      <PopularSection onIdsSeen={onIdsSeen} />
-      <TrendingSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
-      <SeasonalSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
-      <NewReleasesSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
-      <RecommendationsSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
-      <GenreRowsSection onIdsSeen={onIdsSeen} excludeIds={allShownIds} />
+      <PopularSection />
+      <TrendingSection />
+      <SeasonalSection />
+      <NewReleasesSection />
+      <RecommendationsSection />
+      <GenreRowsSection />
+      <SkeletonSection />
     </div>
+  );
+}
+
+function SkeletonSection() {
+  const { language } = useLanguage();
+  const [show, setShow] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShow(false), 8000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!show) return null;
+
+  return (
+    <section className="mb-14">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-1 h-6 bg-gray-700 rounded-full" />
+        <div className="h-7 w-48 bg-gray-800 rounded animate-pulse" />
+      </div>
+      <div className="flex gap-3 overflow-hidden py-2">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="flex-shrink-0 w-[180px]">
+            <div className="aspect-[3/4] bg-gray-800 rounded-lg animate-pulse" />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -106,7 +121,7 @@ function ResumeWatchingSection() {
 
   const entriesWithProgress = entries
     .filter(e => e.currentEpisode && e.currentEpisode > 0)
-    .sort((a, b) => (b.lastWatched ?? b.addedAt) - (a.lastWatched ?? b.addedAt));
+    .sort((a, b) => (b.lastWatched ?? b.addedAt) - (a.lastWatched ?? a.addedAt));
 
   const baseTitleMap = new Map<string, typeof entriesWithProgress[0]>();
   entriesWithProgress.forEach(entry => {
@@ -202,7 +217,7 @@ function ResumeWatchingSection() {
               href={`/watch/${entry.animeSlug}/${seasonToWatch}/${episodeToWatch}?id=${entry.animeId}${entry.aniworldSlug ? `&awSlug=${entry.aniworldSlug}` : ''}`}
               className="group block"
             >
-              <div className="relative overflow-hidden rounded-lg bg-gray-800 aspect-[3/4] shadow-lg">
+              <div className="relative overflow-hidden rounded-xl bg-gray-800 aspect-[3/4] ring-1 ring-white/[0.04]">
                 <img
                   src={entry.coverImage || anime?.coverImage?.large || anime?.coverImage?.medium}
                   alt={anime?.title?.english ?? anime?.title?.romaji}
@@ -216,7 +231,7 @@ function ResumeWatchingSection() {
                   </div>
                 )}
                 <div className="absolute top-2 left-2">
-                  <span className="px-2 py-0.5 text-xs font-semibold bg-theme-primary text-white rounded">
+                  <span className="px-2 py-0.5 text-xs font-semibold bg-theme-primary text-white rounded flex items-center leading-none">
                     S{seasonToWatch} E{episodeToWatch}
                   </span>
                 </div>
@@ -239,7 +254,7 @@ function ResumeWatchingSection() {
   );
 }
 
-function PopularSection({ onIdsSeen }: { onIdsSeen: (ids: number[]) => void }) {
+function PopularSection() {
   const { language } = useLanguage();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,14 +262,14 @@ function PopularSection({ onIdsSeen }: { onIdsSeen: (ids: number[]) => void }) {
   useEffect(() => {
     fetch('/api/anilist/popular?perPage=16')
       .then(r => r.json())
-      .then((d: { results?: AnimeBasic[] }) => { const arr = d.results ?? []; setAnime(arr); onIdsSeen(arr.map(a => a.id)); setLoading(false); })
+      .then((d: { results?: AnimeBasic[] }) => { setAnime(d.results ?? []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
-  return <HorizontalAnimeSection title={language === 'de' ? 'Beliebt' : 'Popular'} anime={anime} loading={loading} href="/browse?sort=POPULARITY_DESC" />;
+  return <PosterSection title={language === 'de' ? 'Beliebt' : 'Popular'} anime={anime} loading={loading} href="/browse?sort=POPULARITY_DESC" />;
 }
 
-function TrendingSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+function TrendingSection() {
   const { language } = useLanguage();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -262,20 +277,14 @@ function TrendingSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[])
   useEffect(() => {
     fetch('/api/anilist/trending?perPage=16')
       .then(r => r.json())
-      .then((d: { results?: AnimeBasic[] }) => {
-        const arr = d.results ?? [];
-        const filtered = dedupe(arr, excludeIds);
-        setAnime(filtered);
-        onIdsSeen(filtered.map(a => a.id));
-        setLoading(false);
-      })
+      .then((d: { results?: AnimeBasic[] }) => { setAnime(d.results ?? []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [excludeIds.size]);
+  }, []);
 
-  return <HorizontalAnimeSection title={language === 'de' ? 'Trend' : 'Trending'} anime={anime} loading={loading} href="/browse?sort=TRENDING_DESC" />;
+  return <PosterSection title={language === 'de' ? 'Trend' : 'Trending'} anime={anime} loading={loading} href="/browse?sort=TRENDING_DESC" />;
 }
 
-function SeasonalSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+function SeasonalSection() {
   const { language } = useLanguage();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -285,10 +294,7 @@ function SeasonalSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[])
     fetch('/api/anilist/seasonal')
       .then(r => r.json())
       .then((d: { results?: AnimeBasic[]; season?: string; year?: number }) => {
-        const arr = d.results ?? [];
-        const filtered = dedupe(arr, excludeIds);
-        setAnime(filtered);
-        onIdsSeen(filtered.map(a => a.id));
+        setAnime(d.results ?? []);
         const seasonNames: Record<string, string> = {
           WINTER: language === 'de' ? 'Winter' : 'Winter',
           SPRING: language === 'de' ? 'Frühling' : 'Spring',
@@ -299,12 +305,12 @@ function SeasonalSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[])
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [excludeIds.size]);
+  }, []);
 
-  return <HorizontalAnimeSection title={label} anime={anime} loading={loading} href="/seasonal" />;
+  return <PosterSection title={label} anime={anime} loading={loading} href="/seasonal" />;
 }
 
-function NewReleasesSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+function NewReleasesSection() {
   const { language } = useLanguage();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -313,25 +319,19 @@ function NewReleasesSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number
   useEffect(() => {
     fetch('/api/anilist/browse?sort=START_DATE_DESC&perPage=16')
       .then(r => r.json())
-      .then((d: { results?: AnimeBasic[] }) => {
-        const arr = d.results ?? [];
-        const filtered = dedupe(arr, excludeIds);
-        setAnime(filtered);
-        onIdsSeen(filtered.map(a => a.id));
-        setLoading(false);
-      })
+      .then((d: { results?: AnimeBasic[] }) => { setAnime(d.results ?? []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [excludeIds.size]);
+  }, []);
 
-  return <HorizontalAnimeSection title={title} anime={anime} loading={loading} />;
+  return <PosterSection title={title} anime={anime} loading={loading} />;
 }
 
-function RecommendationsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+function RecommendationsSection() {
   const { language } = useLanguage();
   const { entries } = useWatchlist();
   const [anime, setAnime] = useState<AnimeBasic[]>([]);
   const [loading, setLoading] = useState(true);
-  const title = language === 'de' ? 'Empfehlungen' : 'Recommended';
+  const title = language === 'de' ? 'Für dich empfohlen' : 'Recommended for you';
 
   useEffect(() => {
     const fetchRecs = async () => {
@@ -339,10 +339,7 @@ function RecommendationsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: nu
       if (watchedIds.length === 0) {
         const res = await fetch('/api/anilist/trending?perPage=16');
         const data: { results?: AnimeBasic[] } = await res.json();
-        const arr = data.results ?? [];
-        const filtered = dedupe(arr, excludeIds);
-        setAnime(filtered);
-        onIdsSeen(filtered.map(a => a.id));
+        setAnime(data.results ?? []);
         setLoading(false);
         return;
       }
@@ -351,12 +348,8 @@ function RecommendationsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: nu
       try {
         const res = await fetch(`/api/anilist/recommendations?id=${lastEntry.animeId}`);
         const data: { results?: AnimeBasic[] } = await res.json();
-        const recResults = data.results;
-        if (recResults && recResults.length > 0) {
-          const arr = recResults.slice(0, 16);
-          const filtered = dedupe(arr, excludeIds);
-          setAnime(filtered);
-          onIdsSeen(filtered.map(a => a.id));
+        if (data.results && data.results.length > 0) {
+          setAnime(data.results.slice(0, 16));
           setLoading(false);
           return;
         }
@@ -366,18 +359,14 @@ function RecommendationsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: nu
         const searchRes = await fetch(`/api/anilist/search?id=${lastEntry.animeId}`);
         const searchData: { results?: Array<{ genres?: string[] }> } = await searchRes.json();
         const genres = searchData.results?.[0]?.genres;
-        const genreList = genres;
-        if (genreList && genreList.length > 0) {
+        if (genres && genres.length > 0) {
           const params = new URLSearchParams();
           params.set('perPage', '20');
-          genreList.slice(0, 2).forEach((g: string) => params.append('genre', g));
+          genres.slice(0, 2).forEach((g: string) => params.append('genre', g));
           params.set('sort', 'SCORE_DESC');
           const res = await fetch(`/api/anilist/browse?${params}`);
           const data: { results?: AnimeBasic[] } = await res.json();
-          const arr = data.results ?? [];
-          const filtered = dedupe(arr, excludeIds);
-          setAnime(filtered);
-          onIdsSeen(filtered.map(a => a.id));
+          setAnime(data.results ?? []);
           setLoading(false);
           return;
         }
@@ -385,21 +374,16 @@ function RecommendationsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: nu
 
       fetch('/api/anilist/trending?perPage=16')
         .then(r => r.json())
-        .then((d: { results?: AnimeBasic[] }) => {
-          const arr = d.results ?? [];
-          const filtered = dedupe(arr, excludeIds);
-          setAnime(filtered);
-          onIdsSeen(filtered.map(a => a.id));
-          setLoading(false);
-        }).catch(() => setLoading(false));
+        .then((d: { results?: AnimeBasic[] }) => { setAnime(d.results ?? []); setLoading(false); })
+        .catch(() => setLoading(false));
     };
     fetchRecs();
-  }, [excludeIds.size, entries.length]);
+  }, [entries.length]);
 
-  return <HorizontalAnimeSection title={title} anime={anime} loading={loading} />;
+  return <PosterSection title={title} anime={anime} loading={loading} />;
 }
 
-function GenreRowsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]) => void; excludeIds: Set<number> }) {
+function GenreRowsSection() {
   const { language } = useLanguage();
   const { entries } = useWatchlist();
   const [rows, setRows] = useState<{ genre: string; anime: AnimeBasic[] }[]>([]);
@@ -425,13 +409,8 @@ function GenreRowsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]
           const randomPage = Math.floor(Math.random() * 5) + 1;
           const res = await fetch(`/api/anilist/browse?genre=${encodeURIComponent(genre)}&perPage=20&sort=TRENDING_DESC&page=${randomPage}`);
           const data: { results?: AnimeBasic[] } = await res.json();
-          const resultsArr = data.results;
-          if (resultsArr && resultsArr.length > 0) {
-            const filtered = dedupe(resultsArr, excludeIds);
-            if (filtered.length > 0) {
-              results.push({ genre, anime: filtered });
-              onIdsSeen(filtered.map(a => a.id));
-            }
+          if (data.results && data.results.length > 0) {
+            results.push({ genre, anime: data.results });
           }
         } catch {}
       }
@@ -439,14 +418,14 @@ function GenreRowsSection({ onIdsSeen, excludeIds }: { onIdsSeen: (ids: number[]
       setLoading(false);
     };
     fetchGenres();
-  }, [excludeIds.size, entries.length]);
+  }, [entries.length]);
 
   if (loading || rows.length === 0) return null;
 
   return (
     <>
       {rows.map(row => (
-        <HorizontalAnimeSection
+        <PosterSection
           key={row.genre}
           title={row.genre}
           anime={row.anime}

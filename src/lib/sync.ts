@@ -7,7 +7,7 @@ const DB_PATH = path.join(process.cwd(), 'data/anime.db');
 interface AniListMedia {
   id: number;
   title: { romaji: string; english: string | null; native: string | null };
-  coverImage: { large: string; medium: string };
+  coverImage: { extraLarge: string; large: string; medium: string };
   bannerImage: string | null;
   format: string;
   status: string;
@@ -65,7 +65,7 @@ async function syncPopularAnime(db: Database.Database) {
         media(type: ANIME, sort: [POPULARITY_DESC], isAdult: false) {
           id
           title { romaji english native }
-          coverImage { large medium }
+          coverImage { extraLarge large medium }
           bannerImage
           format
           status
@@ -114,7 +114,7 @@ async function syncPopularAnime(db: Database.Database) {
         m.title.romaji,
         m.title.english ?? null,
         m.title.native ?? null,
-        m.coverImage.large,
+        m.coverImage.extraLarge || m.coverImage.large,
         m.bannerImage ?? null,
         m.format ?? null,
         m.status ?? null,

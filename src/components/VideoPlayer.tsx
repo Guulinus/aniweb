@@ -34,10 +34,15 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
   const [selectedServer, setSelectedServer] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showServerDropdown, setShowServerDropdown] = useState(false);
+  const [showQualityDropdown, setShowQualityDropdown] = useState(false);
+  const [autoQuality, setAutoQuality] = useState(true);
 
   const [skipIntro, setSkipIntro] = useState<SkipTime | null>(null);
   const [showSkipBtn, setShowSkipBtn] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const serverDropdownRef = useRef<HTMLDivElement>(null);
+  const qualityDropdownRef = useRef<HTMLDivElement>(null);
   const skipIntroRef = useRef<SkipTime | null>(null);
   const showSkipBtnRef = useRef(false);
   const skipBtnHideTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -234,9 +239,36 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
               }
 
               if (Hls.isSupported()) {
+                const isVidmoly = streamUrl.includes('vmeas.cloud') || streamUrl.includes('vidmoly');
+                const isVoe = streamUrl.includes('cloudwindow-route') || streamUrl.includes('voe-network') || streamUrl.includes('delivery-node');
                 const hls = new Hls({
                   enableWorker: true,
                   lowLatencyMode: false,
+                  xhrSetup: (xhr: XMLHttpRequest) => {
+                    if (isVidmoly) {
+                      xhr.setRequestHeader('Referer', 'https://vidmoly.to/');
+                      xhr.setRequestHeader('Origin', 'https://vidmoly.to');
+                    } else if (isVoe) {
+                      xhr.setRequestHeader('Referer', 'https://voe.sx/');
+                      xhr.setRequestHeader('Origin', 'https://voe.sx');
+                    }
+                  },
+                  fetchSetup: (context: any, initParams: any) => {
+                    if (isVidmoly) {
+                      initParams.headers = {
+                        ...initParams.headers,
+                        'Referer': 'https://vidmoly.to/',
+                        'Origin': 'https://vidmoly.to',
+                      };
+                    } else if (isVoe) {
+                      initParams.headers = {
+                        ...initParams.headers,
+                        'Referer': 'https://voe.sx/',
+                        'Origin': 'https://voe.sx',
+                      };
+                    }
+                    return new Request(context.url, initParams);
+                  },
                 });
                 hls.loadSource(streamUrl);
                 hls.attachMedia(video);
@@ -466,25 +498,47 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowDropdown(false);
       }
+      if (serverDropdownRef.current && !serverDropdownRef.current.contains(e.target as Node)) {
+        setShowServerDropdown(false);
+      }
+      if (qualityDropdownRef.current && !qualityDropdownRef.current.contains(e.target as Node)) {
+        setShowQualityDropdown(false);
+      }
     }
-    if (showDropdown) {
+    if (showDropdown || showServerDropdown || showQualityDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showDropdown]);
+  }, [showDropdown, showServerDropdown, showQualityDropdown]);
+
+  const langPriority = ['Ger-Dub', 'Ger-Sub', 'Eng-Sub'];
 
   const langGroups = useMemo(() => {
-    const groups: Record<string, {index: number; hoster: string; url: string}[]> = {};
+    const groups: Record<string, {index: number; hoster: string; url: string; quality: string}[]> = {};
     links.forEach((link, i) => {
       if (link.hasAds) return;
       const lang = link.language || 'Unknown';
       if (!groups[lang]) groups[lang] = [];
-      groups[lang].push({index: i, hoster: link.hoster, url: link.url});
+      groups[lang].push({index: i, hoster: link.hoster, url: link.url, quality: link.quality || 'unknown'});
     });
     return groups;
   }, [links]);
 
   const availableLangs = Object.keys(langGroups);
+
+  const selectBestLink = useCallback((linksArr: {index: number; url: string; quality: string}[]) => {
+    const sorted = [...linksArr].sort((a, b) => {
+      const aIsHls = a.url.includes('.m3u8') ? 1 : 0;
+      const bIsHls = b.url.includes('.m3u8') ? 1 : 0;
+      if (aIsHls !== bIsHls) return bIsHls - aIsHls;
+      const parseRes = (q: string) => {
+        const m = q.match(/(\d+)p/);
+        return m ? parseInt(m[1]) : 0;
+      };
+      return parseRes(b.quality) - parseRes(a.quality);
+    });
+    return sorted[0];
+  }, []);
 
   const handleServerChange = useCallback((index: number) => {
     setSelectedServer(index);
@@ -495,9 +549,22 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
   const handleLangChange = useCallback((lang: string) => {
     const group = langGroups[lang];
     if (!group || group.length === 0) return;
-    const best = group.find(l => l.url.includes('.m3u8')) || group[0];
-    handleServerChange(best.index);
-  }, [langGroups, handleServerChange]);
+    const best = selectBestLink(group);
+    if (best) handleServerChange(best.index);
+  }, [langGroups, handleServerChange, selectBestLink]);
+
+  useEffect(() => {
+    if (links.length === 0) return;
+    let bestLang = availableLangs.find(l => langPriority.includes(l));
+    if (!bestLang && availableLangs.length > 0) bestLang = availableLangs[0];
+    if (!bestLang) return;
+    const group = langGroups[bestLang];
+    if (!group || group.length === 0) return;
+    const best = selectBestLink(group);
+    if (best) {
+      setSelectedServer(best.index);
+    }
+  }, [links.length]);
 
   if (links.length === 0) {
     return (
@@ -514,12 +581,28 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
   const currentLang = currentLink?.language ?? '';
   const currentHoster = currentLink ? currentLink.hoster.charAt(0).toUpperCase() + currentLink.hoster.slice(1) : '';
 
+  const availableQualities = useMemo(() => {
+    const group = langGroups[currentLang];
+    if (!group) return [];
+    const seen = new Set<string>();
+    return group.filter(l => {
+      if (seen.has(l.quality)) return false;
+      seen.add(l.quality);
+      return true;
+    });
+  }, [langGroups, currentLang]);
+
   return (
     <div>
       <div className="relative" data-player>
         <div ref={containerRef} className="aspect-video bg-black rounded-lg overflow-hidden" />
-        <div className="absolute bottom-4 right-4 text-xs text-gray-400 bg-black/50 px-2 py-1 rounded pointer-events-none">
-          {'← → Seek • ↑ ↓ Volume • Space/K Play/Pause • F Fullscreen • M Mute'}
+        <div className="absolute bottom-4 right-4 pointer-events-none">
+          <span className="hidden md:inline-flex items-center text-xs text-gray-400 bg-black/40 backdrop-blur-sm px-2.5 py-1.5 rounded-md">
+            Space Play · ←→ Seek · ↑↓ Volume · F Fullscreen · M Mute · P PiP
+          </span>
+          <span className="md:hidden flex items-center text-xs text-gray-400 bg-black/40 backdrop-blur-sm px-2.5 py-1.5 rounded-md">
+            Tap to play
+          </span>
         </div>
       </div>
       {error && (
@@ -535,7 +618,8 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
         </div>
       )}
       {availableLangs.length > 0 && (
-        <div className="mt-4 flex flex-wrap items-center gap-2" ref={dropdownRef}>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {/* Language buttons */}
           {availableLangs.map((lang) => {
             const isActive = currentLang === lang;
             const label = lang === 'Ger-Dub' ? (language === 'de' ? '🇩🇪 Deutsch (Sync)' : '🇩🇪 German (Dub)')
@@ -546,7 +630,7 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
               <button
                 key={lang}
                 onClick={() => handleLangChange(lang)}
-                className={`px-4 py-2.5 rounded-lg text-sm font-medium transition ${
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center ${
                   isActive
                     ? 'bg-theme-primary text-white shadow-lg shadow-theme-primary'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
@@ -557,6 +641,106 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
             );
           })}
 
+          {/* Server dropdown */}
+          {currentLang && langGroups[currentLang] && (() => {
+            const hosters = [...new Set(langGroups[currentLang].map(h => h.hoster))];
+            if (hosters.length <= 1) return null;
+            const activeHoster = currentLink?.hoster || '';
+            return (
+              <div className="relative" ref={serverDropdownRef}>
+                <button
+                  onClick={() => setShowServerDropdown(!showServerDropdown)}
+                  className="px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 bg-gray-800 text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" /></svg>
+                  {activeHoster || 'Server'}
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                {showServerDropdown && (
+                  <div className="absolute left-0 mt-2 w-44 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 z-50">
+                    {hosters.map(h => {
+                      const linksForHoster = langGroups[currentLang].filter(l => l.hoster === h);
+                      const bestForHoster = selectBestLink(linksForHoster);
+                      return (
+                        <button
+                          key={h}
+                          onClick={() => {
+                            if (bestForHoster) handleServerChange(bestForHoster.index);
+                            setShowServerDropdown(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm transition ${
+                            activeHoster === h
+                              ? 'text-theme-primary bg-theme-soft'
+                              : 'text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
+                          }`}
+                        >
+                          {h.charAt(0).toUpperCase() + h.slice(1)}
+                          <span className="text-xs text-gray-500 ml-1">({linksForHoster.length})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Auto / Quality dropdown */}
+          <div className="relative" ref={qualityDropdownRef}>
+            <button
+              onClick={() => setShowQualityDropdown(!showQualityDropdown)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 ${
+                autoQuality
+                  ? 'bg-theme-primary text-white shadow-lg shadow-theme-primary'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
+              }`}
+              title={language === 'de' ? 'Qualität auswählen' : 'Select quality'}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              {autoQuality ? 'Auto' : (links[selectedServer]?.quality ?? 'Auto')}
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            {showQualityDropdown && (
+              <div className="absolute left-0 mt-2 w-44 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 z-50">
+                <button
+                  onClick={() => {
+                    setAutoQuality(true);
+                    const group = langGroups[currentLang];
+                    if (group) {
+                      const best = selectBestLink(group);
+                      if (best) handleServerChange(best.index);
+                    }
+                    setShowQualityDropdown(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 text-sm transition flex items-center gap-2 ${
+                    autoQuality
+                      ? 'text-theme-primary bg-theme-soft'
+                      : 'text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  Auto (Best)
+                </button>
+                {availableQualities.map((q) => (
+                  <button
+                    key={q.quality}
+                    onClick={() => {
+                      setAutoQuality(false);
+                      handleServerChange(q.index);
+                      setShowQualityDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm transition ${
+                      !autoQuality && links[selectedServer]?.quality === q.quality
+                        ? 'text-theme-primary bg-theme-soft'
+                        : 'text-gray-300 hover:bg-gray-700 focus-visible:bg-gray-700'
+                    }`}
+                  >
+                    {q.quality}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

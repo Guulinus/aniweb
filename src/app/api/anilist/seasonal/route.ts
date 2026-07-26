@@ -19,7 +19,7 @@ const query = `
     Page(perPage: $perPage) {
       pageInfo { hasNextPage }
       media(type: ANIME, season: $season, seasonYear: $seasonYear, sort: [POPULARITY_DESC], isAdult: false) {
-        id idMal title { romaji english native } coverImage { large medium }
+        id idMal title { romaji english native } coverImage { extraLarge large medium }
         bannerImage
         format status episodes averageScore genres
         startDate { year }
@@ -44,7 +44,7 @@ export async function GET() {
       id: m.id,
       idMal: m.idMal ?? null,
       title: { romaji: m.title?.romaji ?? '', english: m.title?.english ?? null, native: m.title?.native ?? null },
-      coverImage: { large: m.coverImage?.large ?? '', medium: m.coverImage?.medium ?? '' },
+      coverImage: { large: m.coverImage?.extraLarge ?? m.coverImage?.large ?? '', medium: m.coverImage?.large ?? m.coverImage?.medium ?? '' },
       bannerImage: m.bannerImage ?? null,
       format: m.format ?? 'UNKNOWN',
       status: m.status ?? 'UNKNOWN',
