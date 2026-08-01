@@ -152,6 +152,17 @@ This version has breaking changes — APIs, conventions, and file structure may 
 7. **aniSearch.de** — Tracks German streaming availability per provider
 8. **SenpaiDub** — German dub/sub availability tracker
 
+### Git
+- Remote: `https://github.com/Guulinus/aniweb.git` (branch: main)
+- **No credential helper configured** — push with PAT inline (ask user for current PAT, do NOT hardcode in repo):
+  ```bash
+  git push https://<PAT>@github.com/Guulinus/aniweb.git main
+  ```
+- **NEVER commit PAT or secrets to the repo — GitHub push protection blocks it**
+- Commit only when user explicitly requests
+- Backup (source only, no node_modules/.next/.git/data): `/home/sam/aniweb-back`
+- Copy AGENTS.md to backup after updates: `cp AGENTS.md /home/sam/aniweb-back/AGENTS.md`
+
 ### Build & Deploy
 ```bash
 npm run build                    # local build
