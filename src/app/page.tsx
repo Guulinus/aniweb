@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import PosterSection from '@/components/PosterSection';
+import HorizontalAnimeSection from '@/components/HorizontalAnimeSection';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { useLanguage } from '@/hooks/useLanguage';
 import type { AnimeBasic } from '@/types';
@@ -266,7 +266,7 @@ function PopularSection() {
       .catch(() => setLoading(false));
   }, []);
 
-  return <PosterSection title={language === 'de' ? 'Beliebt' : 'Popular'} anime={anime} loading={loading} href="/browse?sort=POPULARITY_DESC" />;
+  return <HorizontalAnimeSection title={language === 'de' ? 'Beliebt' : 'Popular'} anime={anime} loading={loading} href="/browse?sort=POPULARITY_DESC" />;
 }
 
 function TrendingSection() {
@@ -281,7 +281,7 @@ function TrendingSection() {
       .catch(() => setLoading(false));
   }, []);
 
-  return <PosterSection title={language === 'de' ? 'Trend' : 'Trending'} anime={anime} loading={loading} href="/browse?sort=TRENDING_DESC" />;
+  return <HorizontalAnimeSection title={language === 'de' ? 'Trend' : 'Trending'} anime={anime} loading={loading} href="/browse?sort=TRENDING_DESC" />;
 }
 
 function SeasonalSection() {
@@ -307,7 +307,7 @@ function SeasonalSection() {
       .catch(() => setLoading(false));
   }, []);
 
-  return <PosterSection title={label} anime={anime} loading={loading} href="/seasonal" />;
+  return <HorizontalAnimeSection title={label} anime={anime} loading={loading} href="/seasonal" />;
 }
 
 function NewReleasesSection() {
@@ -323,7 +323,7 @@ function NewReleasesSection() {
       .catch(() => setLoading(false));
   }, []);
 
-  return <PosterSection title={title} anime={anime} loading={loading} />;
+  return <HorizontalAnimeSection title={title} anime={anime} loading={loading} />;
 }
 
 function RecommendationsSection() {
@@ -380,7 +380,7 @@ function RecommendationsSection() {
     fetchRecs();
   }, [entries.length]);
 
-  return <PosterSection title={title} anime={anime} loading={loading} />;
+  return <HorizontalAnimeSection title={title} anime={anime} loading={loading} />;
 }
 
 function GenreRowsSection() {
@@ -425,7 +425,7 @@ function GenreRowsSection() {
   return (
     <>
       {rows.map(row => (
-        <PosterSection
+        <HorizontalAnimeSection
           key={row.genre}
           title={row.genre}
           anime={row.anime}

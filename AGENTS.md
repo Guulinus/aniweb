@@ -8,7 +8,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ### Tech Stack
 - Next.js 14, TypeScript, Tailwind CSS, standalone output
-- AniList GraphQL API (metadata), TMDB API (thumbnails), IMDB suggestion API (cover posters)
+- AniList GraphQL API (metadata), TMDB API (thumbnails)
 - AniWorld.to scraper (German streams via hosters: VOE, Vidmoly)
 - Auth: JWT (jose) + bcryptjs + cookie-based sessions
 - SQLite for local DB sync (better-sqlite3), file-based auth (data/auth.json, data/user_{id}.json)
@@ -38,7 +38,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Hero: `pt-14 md:pt-16` (navbar overlap), `mb-14`, content `justify-end` with `pb-12`
 - Max container: `max-w-[1400px] mx-auto`
 - Each section fetches independently (no cascade)
-- **IMDB covers**: `PosterSection` component wraps `HorizontalAnimeSection`, fetches IMDB posters via `/api/imdb/posters` after initial render. Global `posterCache` prevents duplicate API calls. AniList covers shown immediately, IMDB SX500 posters (~500x700px) replace them client-side.
+- **AniList covers**: All homepage sections use AniList `extraLarge` coverImage directly (~225x318px). NO IMDB/TMDB poster replacement on HP — user reverted this (IMDB posters were wrong artwork). `HorizontalAnimeSection` used directly, no PosterSection wrapper.
 - Sections: Weiterschauen, Beliebt, Trend, Seasonal, Neu auf AniRoll, Für dich empfohlen, Genre rows
 - Last section named "Für dich empfohlen"
 - Skeleton section at bottom (6 placeholders, auto-hides after 8s)
@@ -54,8 +54,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Section title: `text-lg md:text-xl`
 - Right fade: `w-20`
 - Uses `group/row` and `group/section` classes
-- Props: `posters?: Map<number, string>` for IMDB cover overrides
-- Cover images: AniList `extraLarge` fallback, upgraded to IMDB SX500 via PosterSection
+- Cover images: AniList `extraLarge` used directly
 
 ### Anime Detail Page (AP)
 - Cover: AniList `coverImage.large`
@@ -122,7 +121,6 @@ This version has breaking changes — APIs, conventions, and file structure may 
 | `GET /api/anilist/genres` | Genre list |
 | `GET /api/anilist/season-mal` | MAL ID for specific season |
 | `GET /api/tmdb/thumbnails` | TMDB episode thumbnails by romaji + seasons |
-| `GET /api/imdb/posters` | IMDB SX500 poster URLs by anime title |
 | `GET /api/aniworld/search` | Search AniWorld for anime slug |
 | `GET /api/aniworld/series/[slug]` | Series info + seasons + episodes |
 | `GET /api/aniworld/episode/[...id]` | Episode stream links (20s timeout, 8s per hoster) |
@@ -134,12 +132,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **Vidara**: 3-domain parallel (`vidara.to`, `vidara.so`, `vidara.cc`) → POST `/api/stream` with `{filecode, device: "web"}`
 
 ### Cover Image Strategy
-- **AniList**: `extraLarge` coverImage (~225x318px portrait) — shown immediately as fallback
-- **IMDB**: SX500 posters (~500x700px) via suggestion API — loaded client-side via `PosterSection`
-  - API: `https://v3.sg.media-imdb.com/suggestion/{letter}/{query}.json`
-  - Filter: `qid === 'tvSeries'` || `qid === 'tvMiniSeries'`
-  - Resize: Append `_V1_SX500.jpg` to image URL
-  - No auth, no CORS, CDN-backed, 7-day cache
+- **AniList**: `extraLarge` coverImage (~225x318px portrait) — used directly for ALL HP covers. IMDB/TMDB poster replacement was reverted (user preference)
 - **TMDB**: `w500` for episode thumbnails and `w780` for banner/film images
 
 ### German Anime Providers (Research Summary)
