@@ -253,7 +253,7 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
           media {
             id
             title { romaji english }
-            coverImage { large medium }
+            coverImage { extraLarge large medium }
             episodes
           }
         }
@@ -284,7 +284,10 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
       mediaMap.set(anime.id, {
         id: anime.id,
         title: anime.title,
-        coverImage: anime.coverImage,
+        coverImage: {
+          large: anime.coverImage?.extraLarge || anime.coverImage?.large || '',
+          medium: anime.coverImage?.large || anime.coverImage?.medium || '',
+        },
         episodes: anime.episodes,
         nextAiringEpisode: {
           airingAt: schedule.airingAt,

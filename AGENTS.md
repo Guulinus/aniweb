@@ -40,6 +40,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - Each section fetches independently (no cascade)
 - **AniList covers**: All homepage sections use AniList `extraLarge` coverImage directly (~225x318px). NO IMDB/TMDB poster replacement on HP — user reverted this (IMDB posters were wrong artwork). `HorizontalAnimeSection` used directly, no PosterSection wrapper.
 - Sections: Weiterschauen, Beliebt, Trend, Seasonal, Neu auf AniRoll, Für dich empfohlen, Genre rows
+- **Weiterschauen-Cover**: Bevorzugt `anime.coverImage.large` (extraLarge) VOR `entry.coverImage` (beim Hinzufügen gespeichert, oft medium/low-res)
 - Last section named "Für dich empfohlen"
 - Skeleton section at bottom (6 placeholders, auto-hides after 8s)
 - Horror genre excluded from all homepage sections
@@ -66,6 +67,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 ### Watch Page (WP)
 - Back link above title: "← Zurück zum Anime"
 - Title + episode name under S/E number
+- **Filme (staffel-0)**: Bei seasonNum 0 wird nur der Filmtitel angezeigt (kein "Staffel 0 · Episode N")
+- **Filme-Tab auf AP (EpisodeList)**: staffel-0-Filme werden als Filmkarten gerendert — TMDB-Poster (`/api/tmdb/film-info`), Laufzeit (Std/Min), kein S0E1-Label
 - **Episode list dropdown**: Toggle button "▾ Episoden (N)" with animated open/close (`maxHeight` transition, `duration-300`)
 - Inside dropdown: Season tabs (`flex flex-wrap gap-2 mb-5`) + Episode grid (`grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3`) — always 4 per row max
 - Active season tab: `bg-theme-primary text-white`
@@ -121,6 +124,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 | `GET /api/anilist/genres` | Genre list |
 | `GET /api/anilist/season-mal` | MAL ID for specific season |
 | `GET /api/tmdb/thumbnails` | TMDB episode thumbnails by romaji + seasons |
+| `GET /api/tmdb/film-info` | Film-Poster + Runtime (Minuten/Jahr) per Titel für Filme-Tab (staffel-0) |
+| `GET /api/filmpalast/categories` | Filme-Seite Kategorien (trending/new/action/comedy) via filmpalast Genre-Seiten |
 | `GET /api/aniworld/search` | Search AniWorld for anime slug |
 | `GET /api/aniworld/series/[slug]` | Series info + seasons + episodes |
 | `GET /api/aniworld/episode/[...id]` | Episode stream links (20s timeout, 8s per hoster) |

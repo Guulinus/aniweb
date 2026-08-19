@@ -12,7 +12,7 @@ export const THEME_PRESETS: Record<string, { primary: string; hover: string }> =
 };
 
 interface ThemeSettings {
-  theme: 'aniroll' | 'crunchyroll' | 'custom';
+  theme: 'aniroll' | 'crunchyroll' | 'netflix' | 'emerald' | 'sky' | 'rose' | 'custom';
   customColor: string;
 }
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import EpisodeList from '@/components/EpisodeList';
 import RelatedAnime from '@/components/RelatedAnime';
 import RecommendationsRow from '@/components/RecommendationsRow';
@@ -21,10 +22,13 @@ function AnimeDetailContent({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [aniworldLoading, setAniworldLoading] = useState(true);
   const [aniworldSlug, setAniworldSlug] = useState<string | null>(null);
+  const [filmTarget, setFilmTarget] = useState<{ slug: string; season: number; episode: number } | null>(null);
   const [mergedThumbnails, setMergedThumbnails] = useState<Record<number, string> | null>(null);
   const [movies, setMovies] = useState<RelatedMovie[]>([]);
   const [movieSlugs, setMovieSlugs] = useState<Record<number, { slug: string; season: number; episode: number }>>({});
   const [isExpanded, setIsExpanded] = useState(false);
+  const [tmdbId, setTmdbId] = useState<number | null>(null);
+  const [episodeDurations, setEpisodeDurations] = useState<Record<number, number>>({});
   const descRef = useRef<HTMLDivElement>(null);
 
   const { add, remove, isInWatchlist, getEntry } = useWatchlist();
@@ -70,6 +74,29 @@ function AnimeDetailContent({ slug }: { slug: string }) {
 
   useEffect(() => {
     if (!anime) return;
+
+    if (anime.format === 'MOVIE') {
+      const movieTitle = anime.title.english || anime.title.romaji;
+      fetch(`/api/aniworld/find-movie?title=${encodeURIComponent(movieTitle)}${anime.year ? `&year=${anime.year}` : ''}`)
+        .then(r => r.json())
+        .then((data: any) => {
+          if (data.found && data.slug) {
+            setAniworldSlug(data.slug);
+            setFilmTarget({ slug: data.slug, season: data.season, episode: data.episode });
+            localStorage.setItem(`aniworldSlug:${anime.id}`, data.slug);
+            return fetch(`/api/aniworld/series/${data.slug}`).then(r => r.json());
+          }
+          return null;
+        })
+        .then((seriesData: any) => {
+          if (seriesData?.available && seriesData.seasons?.length > 0) {
+            setSeasons(seriesData.seasons);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setAniworldLoading(false));
+      return;
+    }
 
     setAniworldLoading(true);
 
@@ -125,7 +152,12 @@ function AnimeDetailContent({ slug }: { slug: string }) {
     fetch(`/api/tmdb/thumbnails?romaji=${encodeURIComponent(romaji)}${english ? `&english=${encodeURIComponent(english)}` : ''}&seasons=${seasonNumbers.join(',')}`)
       .then(r => r.json())
       .then((data) => {
-        if (!data.thumbnails || Object.keys(data.thumbnails).length === 0) return;
+        if (!data.thumbnails || Object.keys(data.thumbnails).length === 0) {
+          if (data.tmdbId) setTmdbId(data.tmdbId);
+          return;
+        }
+
+        if (data.tmdbId) setTmdbId(data.tmdbId);
 
         // Merge: TMDB wins over AniList for overlapping indices
         let globalOffset = 0;
@@ -149,20 +181,72 @@ function AnimeDetailContent({ slug }: { slug: string }) {
       .catch(() => {});
   }, [anime, seasons]);
 
-  // Fetch aniworld episode data for each movie
+  // Fetch episode durations from TMDB when tmdbId is known
   useEffect(() => {
-    if (movies.length === 0) return;
-    movies.forEach((m) => {
-      const searchTitle = m.title.english || m.title.romaji;
-      fetch(`/api/aniworld/find-movie?title=${encodeURIComponent(searchTitle)}${m.year ? `&year=${m.year}` : ''}`)
+    if (!tmdbId || seasons.length === 0) return;
+    let cancelled = false;
+
+    const nonZeroSeasons = seasons.filter(s => s.seasonNumber > 0);
+    if (nonZeroSeasons.length === 0) return;
+
+    // Compute global offset per season
+    const seasonOffsets: Record<number, number> = {};
+    let offset = 0;
+    for (const season of seasons) {
+      seasonOffsets[season.seasonNumber] = offset;
+      offset += season.episodes.length;
+    }
+
+    Promise.all(nonZeroSeasons.map(sn =>
+      fetch(`/api/tmdb/episode-durations?tmdbId=${tmdbId}&season=${sn.seasonNumber}`)
         .then(r => r.json())
-        .then((data: any) => {
-          if (data.found && data.slug && data.season != null && data.episode != null) {
-            setMovieSlugs(prev => ({ ...prev, [m.id]: { slug: data.slug, season: data.season, episode: data.episode } }));
+        .then((data: { durations?: Record<number, number> }) => {
+          if (cancelled || !data.durations) return;
+          const globalOffset = seasonOffsets[sn.seasonNumber] ?? 0;
+          const updates: Record<number, number> = {};
+          for (const ep of sn.episodes) {
+            if (data.durations[ep.number]) {
+              updates[globalOffset + ep.number] = data.durations[ep.number];
+            }
+          }
+          if (Object.keys(updates).length > 0) {
+            setEpisodeDurations(prev => ({ ...prev, ...updates }));
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+    )).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [tmdbId, seasons]);
+
+  // Fetch aniworld episode data for each movie (with cache)
+  useEffect(() => {
+    if (movies.length === 0) return;
+    let cancelled = false;
+    const fetches = movies.map(async (m) => {
+      const cached = localStorage.getItem(`aniworldSlug:${m.id}`);
+      if (cached) {
+        try {
+          const slugData = JSON.parse(cached);
+          if (slugData?.slug) {
+            setMovieSlugs(prev => ({ ...prev, [m.id]: slugData }));
+            return;
+          }
+        } catch {}
+      }
+      const searchTitle = m.title.english || m.title.romaji;
+      try {
+        const res = await fetch(`/api/aniworld/find-movie?title=${encodeURIComponent(searchTitle)}${m.year ? `&year=${m.year}` : ''}`);
+        const data = await res.json();
+        if (!cancelled && data.found && data.slug && data.season != null && data.episode != null) {
+          const entry = { slug: data.slug, season: data.season, episode: data.episode };
+          setMovieSlugs(prev => ({ ...prev, [m.id]: entry }));
+          localStorage.setItem(`aniworldSlug:${m.id}`, JSON.stringify(entry));
+        }
+      } catch {}
     });
+    Promise.allSettled(fetches);
+    return () => { cancelled = true; };
   }, [movies]);
 
   if (loading) {
@@ -186,8 +270,14 @@ function AnimeDetailContent({ slug }: { slug: string }) {
 
   if (!anime) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-16 text-center text-gray-400">
-        <p className="text-lg">Anime not found</p>
+      <div className="max-w-7xl mx-auto px-4 py-16 text-center">
+        <svg className="w-20 h-20 text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <p className="text-lg text-gray-400 mb-2">{language === 'de' ? 'Anime nicht gefunden' : 'Anime not found'}</p>
+        <Link href="/browse" className="text-sm text-theme-primary hover:text-theme-hover transition">
+          {language === 'de' ? 'Anime durchstöbern →' : 'Browse anime →'}
+        </Link>
       </div>
     );
   }
@@ -228,8 +318,18 @@ function AnimeDetailContent({ slug }: { slug: string }) {
       : `Continue E${currentEntry.currentEpisode ?? 1}`;
   };
 
-  const watchSeason = currentEntry?.currentSeason ?? 1;
+  const titleSeasonMatch = (title.match(/season\s*(\d+)/i) ?? title.match(/part\s*(\d+)/i));
+  const titleSeason = titleSeasonMatch ? parseInt(titleSeasonMatch[1]) : null;
+  const watchSeason = currentEntry?.currentSeason ?? titleSeason ?? 1;
   const watchEpisode = currentEntry?.currentEpisode ?? 1;
+
+  const watchHref = filmTarget
+    ? `/watch/${filmTarget.slug}/${filmTarget.season}/${filmTarget.episode}?id=${anime.id}`
+    : `/watch/${displaySlug}/${watchSeason}/${watchEpisode}?id=${anime.id}`;
+
+  const watchLabel = filmTarget
+    ? (language === 'de' ? 'Film ansehen' : 'Watch Movie')
+    : getWatchButtonLabel();
 
   return (
     <div className="relative">
@@ -265,10 +365,10 @@ function AnimeDetailContent({ slug }: { slug: string }) {
           {/* Info */}
           <div className="flex-1 pt-2 md:pt-16">
             <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-300 mb-3">
-              {anime.format && <span className="px-2 py-0.5 bg-black/40 rounded uppercase">{anime.format}</span>}
-              {anime.episodes && <span className="px-2 py-0.5 bg-black/40 rounded">{anime.episodes} EP</span>}
-              {anime.year && <span className="px-2 py-0.5 bg-black/40 rounded">{anime.year}</span>}
-              <span className="px-2 py-0.5 bg-black/40 rounded">{anime.status?.replace(/_/g, ' ')}</span>
+              {anime.format && <span className="px-2 py-0.5 bg-white/10 backdrop-blur-sm rounded uppercase">{anime.format}</span>}
+              {anime.episodes && <span className="px-2 py-0.5 bg-white/10 backdrop-blur-sm rounded">{anime.episodes} EP</span>}
+              {anime.year && <span className="px-2 py-0.5 bg-white/10 backdrop-blur-sm rounded">{anime.year}</span>}
+              <span className="px-2 py-0.5 bg-white/10 backdrop-blur-sm rounded">{anime.status?.replace(/_/g, ' ')}</span>
             </div>
 
             <h1 className="text-3xl md:text-4xl font-bold text-white mb-1 leading-tight">{title}</h1>
@@ -279,32 +379,30 @@ function AnimeDetailContent({ slug }: { slug: string }) {
             {/* Genres */}
             <div className="flex flex-wrap gap-2 mb-5">
               {anime.genres.map((genre) => (
-                <a
+                <Link
                   key={genre}
                   href={`/browse?genre=${encodeURIComponent(genre)}`}
                   className="px-3 py-1 bg-white/10 hover:bg-white/20 transition text-gray-200 text-sm rounded-full flex items-center"
                 >
                   {genre}
-                </a>
+                </Link>
               ))}
             </div>
 
             {/* Actions */}
             <div className="flex flex-wrap gap-3 mb-6">
-              <a
-                href={`/watch/${displaySlug}/${watchSeason}/${watchEpisode}?id=${anime.id}`}
+              <Link
+                href={watchHref}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-lg font-bold text-base transition shadow-lg"
                 style={{
                   backgroundColor: 'var(--color-primary)',
                   color: '#fff',
                   boxShadow: '0 4px 14px var(--color-primary-shadow)',
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary-hover)'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-primary)'}
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                {getWatchButtonLabel()}
-              </a>
+                {watchLabel}
+              </Link>
               <button
                 onClick={handleWatchlistToggle}
                 className={`inline-flex items-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition border ${
@@ -357,7 +455,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
         </div>
 
         {/* Episodes */}
-        <section className="mt-12 mb-10">
+        <section className="mt-12 mb-10 animate-fade-in stagger-3">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-1 h-6 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
             <h2 className="text-xl md:text-2xl font-bold text-white">
@@ -379,11 +477,12 @@ function AnimeDetailContent({ slug }: { slug: string }) {
             <EpisodeList
               key={anime.id}
               animeSlug={displaySlug}
-              aniworldSlug={aniworldSlug}
+              aniworldSlug={filmTarget?.slug ?? aniworldSlug}
               animeId={anime.id}
               seasons={seasons}
-              defaultSeason={watchSeason}
+              defaultSeason={filmTarget ? filmTarget.season : (titleSeason ?? 1)}
               episodeThumbnails={mergedThumbnails ?? anime.episodeThumbnails}
+              episodeDurations={episodeDurations}
               movies={movies}
               movieSlugs={movieSlugs}
             />
@@ -399,7 +498,23 @@ function AnimeDetailContent({ slug }: { slug: string }) {
 
 export default function AnimeDetailPage({ params }: { params: { slug: string } }) {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-16 text-gray-400">Loading...</div>}>
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-16">
+      <div className="h-72 bg-gray-800 rounded-xl animate-pulse mb-6" />
+      <div className="flex gap-6">
+        <div className="w-48 h-64 bg-gray-800 rounded-xl animate-pulse flex-shrink-0" />
+        <div className="flex-1 space-y-4 pt-4">
+          <div className="h-4 w-48 bg-gray-800 rounded animate-pulse" />
+          <div className="h-8 w-72 bg-gray-800 rounded animate-pulse" />
+          <div className="h-4 w-36 bg-gray-800 rounded animate-pulse" />
+          <div className="flex gap-2">
+            <div className="h-6 w-20 bg-gray-800 rounded-full animate-pulse" />
+            <div className="h-6 w-24 bg-gray-800 rounded-full animate-pulse" />
+            <div className="h-6 w-16 bg-gray-800 rounded-full animate-pulse" />
+          </div>
+          <div className="h-10 w-40 bg-gray-800 rounded-lg animate-pulse" />
+        </div>
+      </div>
+    </div>}>
       <AnimeDetailContent slug={params.slug} />
     </Suspense>
   );

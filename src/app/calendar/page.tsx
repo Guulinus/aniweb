@@ -35,7 +35,17 @@ export default function CalendarPage() {
         <h1 className="text-3xl font-bold text-white mb-6">
           {language === 'de' ? 'Kalender' : 'Calendar'}
         </h1>
-        <div className="text-gray-400">{language === 'de' ? 'Lädt...' : 'Loading...'}</div>
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-gray-800 rounded-lg animate-pulse">
+              <div className="w-10 h-10 bg-gray-700 rounded-lg flex-shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 bg-gray-700 rounded w-48" />
+                <div className="h-3 bg-gray-700/60 rounded w-32" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -73,7 +83,7 @@ export default function CalendarPage() {
                       className="flex gap-3 hover:bg-gray-700/50 focus-visible:bg-gray-700/50 p-2 rounded transition"
                     >
                       <img
-                        src={anime.coverImage.medium || anime.coverImage.large}
+                        src={anime.coverImage.large || anime.coverImage.medium}
                         alt={title}
                         className="w-16 h-20 object-cover rounded"
                         loading="lazy"

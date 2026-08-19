@@ -9,6 +9,42 @@ export interface TmdbMovie {
   year: number | null;
 }
 
+export interface TmdbFilmInfo {
+  title: string;
+  posterImage: string;
+  runtimeMinutes: number | null;
+  year: number | null;
+}
+
+export async function getTmdbFilmInfo(title: string): Promise<TmdbFilmInfo | null> {
+  try {
+    const res = await fetch(
+      `${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`
+    );
+    const data = await res.json();
+    const movie = data.results?.find((m: any) => m.title && !m.adult) ?? data.results?.[0];
+    if (!movie) return null;
+
+    let runtime: number | null = null;
+    try {
+      const detailRes = await fetch(
+        `${TMDB_BASE}/movie/${movie.id}?api_key=${TMDB_API_KEY}&language=de-DE`
+      );
+      const detail = await detailRes.json();
+      runtime = detail.runtime && detail.runtime > 0 ? detail.runtime : null;
+    } catch {}
+
+    return {
+      title: movie.title || movie.original_title,
+      posterImage: movie.poster_path ? `${TMDB_IMG_BASE}${movie.poster_path}` : '',
+      runtimeMinutes: runtime,
+      year: movie.release_date ? parseInt(movie.release_date.substring(0, 4)) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function searchTmdbMovie(query: string): Promise<TmdbMovie[]> {
   try {
     const res = await fetch(

@@ -16,6 +16,7 @@ interface EpisodeThumb {
   episode: number;
   thumbnail?: string;
   title?: string;
+  duration?: number;
 }
 
 function WatchContent({ animeSlug, season, episode }: { animeSlug: string; season: string; episode: string }) {
@@ -45,6 +46,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
   const [seriesSeasons, setSeriesSeasons] = useState<any[]>([]);
   const [mergedThumbnails, setMergedThumbnails] = useState<Record<number, string>>({});
   const [currentEpTitle, setCurrentEpTitle] = useState(episodeTitle);
+  const [episodeDurations, setEpisodeDurations] = useState<Record<number, number>>({});
 
   const animeTitleRef = useRef(animeTitle);
   const coverImageRef = useRef(coverImage);
@@ -108,23 +110,33 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
       .catch(() => {});
   }, [displaySeason, animeSlug, awSlugFromUrl, episodeNum]);
 
-  // Fetch TMDB thumbnails separately when season or title changes
+  // Fetch TMDB thumbnails + durations separately when season or title changes
   useEffect(() => {
     const title = animeTitleRef.current;
-    if (!title || !displaySeason) { setMergedThumbnails({}); return; }
+    if (!title || !displaySeason) { setMergedThumbnails({}); setEpisodeDurations({}); return; }
 
     setMergedThumbnails({});
+    setEpisodeDurations({});
 
     fetch(`/api/tmdb/thumbnails?romaji=${encodeURIComponent(title)}&seasons=${displaySeason}`)
       .then(r => r.json())
       .then(tmdb => {
-        if (!tmdb.thumbnails?.[displaySeason]) return;
-        const thumbs = tmdb.thumbnails[displaySeason] as Record<string, string>;
-        const merged: Record<number, string> = {};
-        for (const [epStr, url] of Object.entries(thumbs)) {
-          merged[parseInt(epStr)] = url as string;
+        if (tmdb.thumbnails?.[displaySeason]) {
+          const thumbs = tmdb.thumbnails[displaySeason] as Record<string, string>;
+          const merged: Record<number, string> = {};
+          for (const [epStr, url] of Object.entries(thumbs)) {
+            merged[parseInt(epStr)] = url as string;
+          }
+          setMergedThumbnails(merged);
         }
-        setMergedThumbnails(merged);
+        if (tmdb.tmdbId) {
+          fetch(`/api/tmdb/episode-durations?tmdbId=${tmdb.tmdbId}&season=${displaySeason}`)
+            .then(r => r.json())
+            .then((data: { durations?: Record<number, number> }) => {
+              if (data.durations) setEpisodeDurations(data.durations);
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {});
   }, [displaySeason, animeTitle]);
@@ -234,10 +246,10 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
               });
             }
           } else {
-            setError(noStreamError);
+            setError(data.error || noStreamError);
           }
         })
-        .catch(() => { if (!cancelled) setError(loadError); })
+        .catch((err) => { if (!cancelled) setError(`${loadError}: ${err?.message || err}`); })
         .finally(() => { if (!cancelled) setLoading(false); });
     });
     return () => { cancelled = true; };
@@ -264,8 +276,14 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
         {animeTitle || animeSlug.replace(/-/g, ' ')}
       </h1>
       <p className="text-sm text-gray-400 mb-4">
-        {language === 'de' ? `Staffel ${seasonNum} · Episode ${episodeNum}` : `Season ${seasonNum} · Episode ${episodeNum}`}
-        {currentEpTitle && <span className="text-gray-500"> — {currentEpTitle}</span>}
+        {seasonNum === 0
+          ? (currentEpTitle || (language === 'de' ? 'Film' : 'Movie'))
+          : (
+            <>
+              {language === 'de' ? `Staffel ${seasonNum} · Episode ${episodeNum}` : `Season ${seasonNum} · Episode ${episodeNum}`}
+              {currentEpTitle && <span className="text-gray-500"> — {currentEpTitle}</span>}
+            </>
+          )}
       </p>
 
       {loading ? (
@@ -305,6 +323,7 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
         <div className="mt-6">
           <button
             onClick={() => setEpisodeListOpen(!episodeListOpen)}
+            aria-expanded={episodeListOpen}
             className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-gray-800/50 hover:bg-gray-700 focus-visible:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition w-full sm:w-auto"
           >
             <svg className={`w-4 h-4 transition-transform duration-300 ${episodeListOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -374,6 +393,9 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
                         {ep.title && (
                           <p className="text-xs text-gray-400 truncate mt-0.5">{ep.title}</p>
                         )}
+                        {episodeDurations[ep.episode] && (
+                          <p className="text-[11px] text-gray-500 mt-0.5">{episodeDurations[ep.episode]}m</p>
+                        )}
                       </div>
                     </Link>
                   );
@@ -389,7 +411,12 @@ function WatchContent({ animeSlug, season, episode }: { animeSlug: string; seaso
 
 export default function WatchPage({ params }: { params: { animeSlug: string; season: string; episode: string } }) {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-16 pb-6 text-gray-400">Loading...</div>}>
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-16 pb-32">
+      <div className="h-4 bg-gray-800 rounded w-40 mb-3 animate-pulse" />
+      <div className="h-6 bg-gray-800 rounded w-64 mb-1 animate-pulse" />
+      <div className="h-4 bg-gray-800 rounded w-48 mb-4 animate-pulse" />
+      <div className="aspect-video bg-gray-800 rounded-lg animate-pulse" />
+    </div>}>
       <WatchContent animeSlug={params.animeSlug} season={params.season} episode={params.episode} />
     </Suspense>
   );

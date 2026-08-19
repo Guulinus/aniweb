@@ -19,10 +19,10 @@ export default function FilmePage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/tmdb/thumbnails?category=trending').then(r => r.json()).catch(() => ({ movies: [] })),
-      fetch('/api/tmdb/thumbnails?category=new').then(r => r.json()).catch(() => ({ movies: [] })),
-      fetch('/api/tmdb/thumbnails?category=action').then(r => r.json()).catch(() => ({ movies: [] })),
-      fetch('/api/tmdb/thumbnails?category=comedy').then(r => r.json()).catch(() => ({ movies: [] })),
+      fetch('/api/filmpalast/categories?category=trending').then(r => r.json()).catch(() => ({ movies: [] })),
+      fetch('/api/filmpalast/categories?category=new').then(r => r.json()).catch(() => ({ movies: [] })),
+      fetch('/api/filmpalast/categories?category=action').then(r => r.json()).catch(() => ({ movies: [] })),
+      fetch('/api/filmpalast/categories?category=comedy').then(r => r.json()).catch(() => ({ movies: [] })),
     ]).then(([t, n, a, c]) => {
       setTrending(t.movies ?? []);
       setNewReleases(n.movies ?? []);

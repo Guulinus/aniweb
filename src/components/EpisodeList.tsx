@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import type { AniworldSeason, RelatedMovie } from '@/types';
 import { useLanguage } from '@/hooks/useLanguage';
@@ -12,6 +12,7 @@ interface EpisodeListProps {
   seasons: AniworldSeason[];
   defaultSeason?: number | null;
   episodeThumbnails?: Record<number, string> | null;
+  episodeDurations?: Record<number, number>;
   movies?: RelatedMovie[];
   movieSlugs?: Record<number, { slug: string; season: number; episode: number }>;
 }
@@ -22,6 +23,12 @@ interface WatchData {
   watched: number[];
   progress: Record<number, number>;
   lastWatched: number | null;
+}
+
+interface FilmInfo {
+  posterImage: string;
+  runtimeMinutes: number | null;
+  year: number | null;
 }
 
 function loadWatchData(animeId: number, seasonData?: {seasonNumber: number; episodes: {number: number}[]}[]): WatchData {
@@ -66,7 +73,7 @@ function saveWatchProgress(animeId: number, episode: number) {
   localStorage.setItem(`lastWatched:${animeId}`, episode.toString());
 }
 
-export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons, defaultSeason, episodeThumbnails, movies, movieSlugs }: EpisodeListProps) {
+export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons, defaultSeason, episodeThumbnails, episodeDurations, movies, movieSlugs }: EpisodeListProps) {
   const { language } = useLanguage();
   const [activeSeason, setActiveSeason] = useState<number>(defaultSeason || 1);
   const [watchData, setWatchData] = useState<WatchData>({ watched: [], progress: {}, lastWatched: null });
@@ -77,12 +84,31 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
     setWatchData(loadWatchData(animeId, seasons));
   }, [animeId, seasons]);
 
+  const [filmInfos, setFilmInfos] = useState<Record<string, FilmInfo>>({});
+  const filmSeason = seasons.find(s => s.seasonNumber === 0);
+  const filmTitles = useMemo(() => filmSeason?.episodes.map(e => e.title).filter(Boolean) ?? [], [filmSeason]);
+  const filmTitlesKey = filmTitles.join('|');
+
+  useEffect(() => {
+    if (filmTitles.length === 0) { setFilmInfos({}); return; }
+    let cancelled = false;
+    fetch(`/api/tmdb/film-info?${filmTitles.map(t => `title=${encodeURIComponent(t)}`).join('&')}`)
+      .then(r => r.json())
+      .then(data => { if (!cancelled) setFilmInfos(data.films ?? {}); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [filmTitlesKey, filmTitles.length]);
+
   const sortedSeasons = useMemo(() => [...seasons].sort((a, b) => a.seasonNumber - b.seasonNumber), [seasons]);
+
+  const hasAniworldFilms = sortedSeasons.some(s => s.seasonNumber === 0);
+  const hasAniListMovies = movies && movies.length > 0;
+  const showFilmsTab = hasAniworldFilms || hasAniListMovies;
 
   const noDubText = language === 'de' ? 'Keine deutsche Synchronisation verfügbar' : 'No German dub available for this anime';
   const notAvailableText = language === 'de' ? 'Dieses Anime ist nicht auf Aniworld.to verfügbar' : 'This anime is not available on Aniworld.to';
 
-  if (seasons.length === 0) {
+  if (seasons.length === 0 && !hasAniListMovies) {
     return (
       <div className="bg-gray-800/50 rounded-lg p-6 text-center">
         <p className="text-gray-400">{noDubText}</p>
@@ -101,19 +127,20 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
     return offset;
   }, [sortedSeasons, activeSeason]);
 
-  const handleEpisodeClick = (episode: number) => {
+  const handleEpisodeClick = useCallback((episode: number) => {
     saveWatchProgress(animeId, globalEpisodeOffset + episode);
     setWatchData(loadWatchData(animeId));
-  };
+  }, [animeId, globalEpisodeOffset]);
 
-  const getProgressInfo = (globalEpNum: number) => {
+  const getProgressInfo = useCallback((globalEpNum: number) => {
     if (!isClient) return null;
     const secondsWatched = watchData.progress[globalEpNum] || 0;
     if (secondsWatched === 0) return null;
-    const remaining = Math.max(0, DEFAULT_EPISODE_DURATION - secondsWatched);
-    const percent = Math.min(100, (secondsWatched / DEFAULT_EPISODE_DURATION) * 100);
+    const duration = (episodeDurations?.[globalEpNum] ?? DEFAULT_EPISODE_DURATION / 60) * 60;
+    const remaining = Math.max(0, duration - secondsWatched);
+    const percent = Math.min(100, (secondsWatched / duration) * 100);
     return { remaining, percent };
-  };
+  }, [isClient, watchData.progress, episodeDurations]);
 
   const formatTime = (seconds: number) => {
     if (seconds <= 0) return language === 'de' ? 'Fertig' : 'Done';
@@ -121,10 +148,12 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
     return language === 'de' ? `${mins}min übrig` : `${mins}min left`;
   };
 
+  const isFilmsTab = activeSeason === 0 || activeSeason === -1;
+
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-6">
-        {sortedSeasons.map((season) => {
+        {sortedSeasons.filter(s => s.seasonNumber !== 0).map((season) => {
           const isActive = activeSeason === season.seasonNumber;
           return (
             <button
@@ -136,15 +165,15 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
                   : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700 hover:text-white focus-visible:bg-gray-700 focus-visible:text-white'
               }`}
             >
-              {season.seasonNumber === 0 ? 'Filme' : (language === 'de' ? `Staffel ${season.seasonNumber}` : `Season ${season.seasonNumber}`)}
+              {language === 'de' ? `Staffel ${season.seasonNumber}` : `Season ${season.seasonNumber}`}
             </button>
           );
         })}
-        {movies && movies.length > 0 && (
+        {showFilmsTab && (
           <button
-            onClick={() => setActiveSeason(-1)}
+            onClick={() => setActiveSeason(0)}
             className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center ${
-              activeSeason === -1
+              isFilmsTab
                 ? 'bg-theme-primary text-white'
                 : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700 hover:text-white focus-visible:bg-gray-700 focus-visible:text-white'
             }`}
@@ -154,13 +183,66 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
         )}
       </div>
 
-      {activeSeason === -1 && movies && movies.length > 0 ? (
+      {isFilmsTab && showFilmsTab ? (
         <div>
           <p className="text-sm text-gray-500 mb-4">
-            {movies.length} {language === 'de' ? 'Filme' : 'Movies'}
+            {(filmSeason?.episodes.length ?? 0) + (movies?.length ?? 0)} {language === 'de' ? 'Filme' : 'Movies'}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-            {movies.map((movie) => {
+            {filmSeason?.episodes.map((ep) => {
+              const filmTitle = ep.title || `Film ${ep.number}`;
+              const info = filmInfos[ep.title || ''];
+              const runtime = info?.runtimeMinutes ?? null;
+              return (
+                <Link
+                  key={`aniworld-${ep.number}`}
+                  href={`/watch/${animeSlug}/${activeSeason}/${ep.number}?id=${animeId}&title=${encodeURIComponent(filmTitle)}${aniworldSlug ? `&awSlug=${encodeURIComponent(aniworldSlug)}` : ''}`}
+                  className="group block rounded-xl overflow-hidden transition-all duration-200 bg-gray-800/50 hover:bg-gray-800"
+                >
+                  <div className="relative aspect-[3/4] bg-gray-800 overflow-hidden">
+                    {info?.posterImage ? (
+                      <img
+                        src={info.posterImage}
+                        alt={filmTitle}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <svg className="w-12 h-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+                        </svg>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                      <div className="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 group-focus-visible:scale-100 transition-transform">
+                        <svg className="w-6 h-6 text-gray-900 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-3">
+                    <p className="text-sm font-semibold text-white truncate group-hover:text-theme-primary transition">
+                      {filmTitle}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      {info?.year && <span className="text-xs text-gray-500">{info.year}</span>}
+                      {runtime != null && (
+                        <span className="text-xs text-gray-500">
+                          {runtime >= 60
+                            ? (language === 'de'
+                              ? `${Math.floor(runtime / 60)} Std ${runtime % 60} Min`
+                              : `${Math.floor(runtime / 60)}h ${runtime % 60}m`)
+                            : (language === 'de' ? `${runtime} Min` : `${runtime}m`)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+            {movies?.map((movie) => {
               const title = movie.title.english || movie.title.romaji;
               const cover = movie.coverImage?.large || movie.coverImage?.medium;
               const movieSlug = movieSlugs?.[movie.id];
@@ -168,7 +250,7 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
               const watchHref = movieSlug ? `/watch/${movieSlug.slug}/${movieSlug.season}/${movieSlug.episode}?id=${movie.id}` : detailHref;
               return (
                 <Link
-                  key={movie.id}
+                  key={`anilist-${movie.id}`}
                   href={watchHref}
                   className="group block rounded-xl overflow-hidden transition-all duration-200 bg-gray-800/50 hover:bg-gray-800"
                 >
@@ -214,10 +296,10 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
             })}
           </div>
         </div>
-      ) : activeSeason === -1 || !currentSeason ? null : (
+      ) : !currentSeason ? null : (
         <div>
           <p className="text-sm text-gray-500 mb-4">
-            {currentSeason.seasonNumber === 0 ? 'Filme' : (language === 'de' ? `Staffel ${currentSeason.seasonNumber}` : `Season ${currentSeason.seasonNumber}`)}
+            {language === 'de' ? `Staffel ${currentSeason.seasonNumber}` : `Season ${currentSeason.seasonNumber}`}
             <span className="text-gray-600 mx-2">•</span>
             {currentSeason.episodes.length} {language === 'de' ? 'Episoden' : 'Episodes'}
           </p>
@@ -229,6 +311,7 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
               const progress = getProgressInfo(globalEpNum);
               const isLastWatched = isClient && watchData.lastWatched === globalEpNum;
               const thumb = episodeThumbnails?.[globalEpisodeOffset + ep.number] ?? null;
+              const duration = episodeDurations?.[globalEpNum];
 
               return (
                 <Link
@@ -288,7 +371,7 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-1.5">
-                      <span className="text-[11px] text-gray-500">24m</span>
+                      {duration && <span className="text-[11px] text-gray-500">{duration}m</span>}
                       {progress && (
                         <div className="flex-1 h-1 bg-gray-700 rounded-full overflow-hidden max-w-[60px]">
                           <div className="h-full bg-theme-primary transition-all duration-300" style={{ width: `${progress.percent}%` }} />

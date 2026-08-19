@@ -136,7 +136,7 @@ export default function SearchBar() {
               }}
               className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-700 focus-visible:bg-gray-700 transition text-left"
             >
-              <img src={anime.coverImage.medium} alt="" className="w-10 h-14 object-cover rounded" loading="lazy" />
+              <img src={anime.coverImage.large || anime.coverImage.medium} alt="" className="w-10 h-14 object-cover rounded" loading="lazy" />
               <span className="text-white text-sm truncate">{anime.title.english ?? anime.title.romaji}</span>
             </button>
           ))}

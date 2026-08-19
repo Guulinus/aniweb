@@ -62,6 +62,37 @@ function parseEpisodeRows(html: string): { number: number; title: string; slug: 
   return episodes;
 }
 
+function parseFilmEntries(html: string): { number: number; title: string }[] {
+  const films: { number: number; title: string }[] = [];
+  const seen = new Set<number>();
+  for (const m of html.matchAll(/\/filme\/film-(\d+)/g)) {
+    const num = parseInt(m[1], 10);
+    if (isNaN(num) || seen.has(num)) continue;
+    seen.add(num);
+    films.push({ number: num, title: '' });
+  }
+  return films.sort((a, b) => a.number - b.number);
+}
+
+async function getFilmTitles(slug: string, numbers: number[]): Promise<Record<number, string>> {
+  const titles: Record<number, string> = {};
+  const CONCURRENCY = 3;
+  let idx = 0;
+  async function worker() {
+    while (idx < numbers.length) {
+      const num = numbers[idx++];
+      try {
+        const html = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/filme/film-' + num);
+        if (!html) continue;
+        const m = html.match(/episodeGermanTitle[^>]*>([\s\S]*?)<\//);
+        if (m?.[1]?.trim()) titles[num] = m[1].trim();
+      } catch {}
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, numbers.length) }, () => worker()));
+  return titles;
+}
+
 export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]> {
   const html = await fetchHtml(BASE_URL + '/anime/stream/' + slug);
   if (!html) return [];
@@ -70,6 +101,19 @@ export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]
   for (const m of html.matchAll(/staffel-(\d+)/g)) seasonLinks.add(parseInt(m[1]));
 
   const result: AniworldSeason[] = [];
+
+  const filmeHtml = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/filme');
+  if (filmeHtml) {
+    const films = parseFilmEntries(filmeHtml);
+    if (films.length) {
+      const titles = await getFilmTitles(slug, films.map(f => f.number));
+      result.push({
+        seasonNumber: 0,
+        episodes: films.map(f => ({ number: f.number, title: titles[f.number] || `Film ${f.number}`, slug: '' })),
+      });
+    }
+  }
+
   for (const sn of [...seasonLinks].sort((a, b) => a - b)) {
     const shtml = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/staffel-' + sn);
     if (!shtml) continue;

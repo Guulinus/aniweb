@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, memo } from 'react';
 import Link from 'next/link';
 import FilmCard from './FilmCard';
 
@@ -17,7 +17,7 @@ interface Props {
   href?: string;
 }
 
-export default function HorizontalMovieSection({ title, movies, loading, href }: Props) {
+const HorizontalMovieSection = memo(function HorizontalMovieSection({ title, movies, loading, href }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showLeftFade, setShowLeftFade] = useState(false);
   const [showRightFade, setShowRightFade] = useState(true);
@@ -104,4 +104,6 @@ export default function HorizontalMovieSection({ title, movies, loading, href }:
       </div>
     </section>
   );
-}
+});
+
+export default HorizontalMovieSection;

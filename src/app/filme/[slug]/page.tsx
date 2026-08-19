@@ -122,7 +122,16 @@ function FilmDetailContent() {
 
 export default function FilmDetailPage() {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-20 pb-6 text-gray-400">Loading...</div>}>
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-20 pb-6">
+      <div className="flex gap-6">
+        <div className="w-48 h-72 bg-gray-800 rounded-xl animate-pulse flex-shrink-0" />
+        <div className="flex-1 space-y-4 pt-4">
+          <div className="h-8 w-64 bg-gray-800 rounded animate-pulse" />
+          <div className="h-4 w-48 bg-gray-800 rounded animate-pulse" />
+          <div className="h-4 w-full bg-gray-800 rounded animate-pulse" />
+        </div>
+      </div>
+    </div>}>
       <FilmDetailContent />
     </Suspense>
   );

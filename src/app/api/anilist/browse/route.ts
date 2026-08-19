@@ -3,7 +3,7 @@ import { browseAnime } from '@/lib/anilist';
 
 const VALID_STATUSES = new Set(['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'NOT_YET_RELEASED', 'CANCELLED']);
 const VALID_FORMATS = new Set(['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC']);
-const VALID_SORTS = new Set(['POPULARITY_DESC', 'TRENDING_DESC', 'SCORE_DESC', 'FAVOURITES_DESC', 'TITLE_ROMAJI', 'START_DATE', 'END_DATE']);
+const VALID_SORTS = new Set(['POPULARITY_DESC', 'TRENDING_DESC', 'SCORE_DESC', 'FAVOURITES_DESC', 'TITLE_ROMAJI', 'START_DATE', 'START_DATE_DESC', 'END_DATE', 'END_DATE_DESC']);
 const VALID_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
 
 export async function GET(request: NextRequest) {

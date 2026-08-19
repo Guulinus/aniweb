@@ -219,7 +219,7 @@ function ResumeWatchingSection() {
             >
               <div className="relative overflow-hidden rounded-xl bg-gray-800 aspect-[3/4] ring-1 ring-white/[0.04]">
                 <img
-                  src={entry.coverImage || anime?.coverImage?.large || anime?.coverImage?.medium}
+                  src={anime?.coverImage?.large || entry.coverImage || anime?.coverImage?.medium}
                   alt={anime?.title?.english ?? anime?.title?.romaji}
                   className="w-full h-full object-cover group-hover:scale-105 group-focus-visible:scale-105 transition-transform duration-500"
                   loading="lazy"

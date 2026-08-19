@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, memo } from 'react';
 import Link from 'next/link';
 import type { AnimeBasic } from '@/types';
 
@@ -12,7 +12,8 @@ interface HorizontalAnimeSectionProps {
   posters?: Map<number, string>;
 }
 
-export default function HorizontalAnimeSection({ title, anime, loading, href, posters }: HorizontalAnimeSectionProps) {
+
+const HorizontalAnimeSection = memo(function HorizontalAnimeSection({ title, anime, loading, href, posters }: HorizontalAnimeSectionProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollRight, setCanScrollRight] = useState(true);
   const [canTouch, setCanTouch] = useState(false);
@@ -225,4 +226,6 @@ export default function HorizontalAnimeSection({ title, anime, loading, href, po
       )}
     </section>
   );
-}
+});
+
+export default HorizontalAnimeSection;

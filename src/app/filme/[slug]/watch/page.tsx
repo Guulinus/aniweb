@@ -168,7 +168,12 @@ function WatchContent() {
 
 export default function FilmWatchPage() {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-20 pb-6 text-gray-400">Loading...</div>}>
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-20 pb-6">
+      <div className="h-4 bg-gray-800 rounded w-40 mb-3 animate-pulse" />
+      <div className="h-6 bg-gray-800 rounded w-64 mb-1 animate-pulse" />
+      <div className="h-4 bg-gray-800 rounded w-48 mb-4 animate-pulse" />
+      <div className="aspect-video bg-gray-800 rounded-lg animate-pulse" />
+    </div>}>
       <WatchContent />
     </Suspense>
   );

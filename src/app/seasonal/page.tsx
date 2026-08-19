@@ -132,7 +132,14 @@ function SeasonalContent() {
 
 export default function SeasonalPage() {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-8 text-gray-400">Loading...</div>}>
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="h-8 bg-gray-800 rounded w-40 mb-6 animate-pulse" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="rounded-xl bg-gray-800 aspect-[2/3] animate-pulse" />
+        ))}
+      </div>
+    </div>}>
       <SeasonalContent />
     </Suspense>
   );
