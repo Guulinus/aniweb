@@ -83,7 +83,6 @@ function ResumeWatchingSection() {
   const { entries } = useWatchlist();
   const [animeData, setAnimeData] = useState<Map<number, AnimeBasic>>(new Map());
   const [positions, setPositions] = useState<Map<string, {time: number; duration: number}>>(new Map());
-  const [seasonPosters, setSeasonPosters] = useState<Map<number, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const title = language === 'de' ? 'Weiterschauen' : 'Continue Watching';
 
@@ -133,25 +132,6 @@ function ResumeWatchingSection() {
       }));
       setAnimeData(map);
       setLoading(false);
-
-      // The card cover should reflect the season the user is actually on (not always
-      // season 1's cover) — season 1 already matches the AniList cover, so only fetch a
-      // TMDB season poster for entries progressed into a later season.
-      const posterMap = new Map<number, string>();
-      await Promise.all(watchingEntries.map(async (entry) => {
-        const season = entry.currentSeason ?? 1;
-        if (season <= 1) return;
-        const anime = map.get(entry.animeId);
-        const romaji = anime?.title.romaji ?? entry.title;
-        const english = anime?.title.english;
-        if (!romaji) return;
-        try {
-          const res = await fetch(`/api/tmdb/season-poster?romaji=${encodeURIComponent(romaji)}${english ? `&english=${encodeURIComponent(english)}` : ''}&season=${season}`);
-          const data = await res.json();
-          if (data.poster) posterMap.set(entry.animeId, data.poster);
-        } catch {}
-      }));
-      if (posterMap.size > 0) setSeasonPosters(posterMap);
     };
     fetchAnimeData();
   }, [watchingEntries.length]);
@@ -206,7 +186,7 @@ function ResumeWatchingSection() {
             >
               <div className="relative overflow-hidden rounded-xl bg-gray-800 aspect-[3/4] ring-1 ring-white/[0.04] transition-all duration-300 group-hover:-translate-y-1 group-focus-visible:-translate-y-1 group-hover:shadow-[0_18px_38px_-12px_var(--color-primary-shadow)] group-focus-visible:shadow-[0_18px_38px_-12px_var(--color-primary-shadow)]">
                 <img
-                  src={seasonPosters.get(entry.animeId) || anime?.coverImage?.large || entry.coverImage || anime?.coverImage?.medium}
+                  src={anime?.coverImage?.large || entry.coverImage || anime?.coverImage?.medium}
                   alt={anime?.title?.english ?? anime?.title?.romaji}
                   className="w-full h-full object-cover group-hover:scale-105 group-focus-visible:scale-105 transition-transform duration-500"
                   loading="lazy"

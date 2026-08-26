@@ -29,7 +29,6 @@ export default function WatchlistClient() {
   const { entries, remove, updateStatus } = useWatchlist();
   const { language } = useLanguage();
   const [animeData, setAnimeData] = useState<Record<number, AnimeBasic>>({});
-  const [seasonPosters, setSeasonPosters] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<WatchlistStatus | 'ALL'>('ALL');
 
@@ -52,33 +51,8 @@ export default function WatchlistClient() {
       })
     ).then((pairs) => {
       if (cancelled) return;
-      const data = Object.fromEntries(pairs.filter(Boolean) as [number, AnimeBasic][]);
-      setAnimeData(data);
+      setAnimeData(Object.fromEntries(pairs.filter(Boolean) as [number, AnimeBasic][]));
       setLoading(false);
-
-      // Cover should reflect the season currently being watched, not always season 1's
-      // (season 1 already matches the AniList cover, so only look up later seasons).
-      Promise.all(
-        entries.map(async (entry) => {
-          const season = entry.currentSeason ?? 1;
-          if (season <= 1) return null;
-          const anime = data[entry.animeId];
-          const romaji = anime?.title.romaji ?? entry.title;
-          const english = anime?.title.english;
-          if (!romaji) return null;
-          try {
-            const res = await fetch(`/api/tmdb/season-poster?romaji=${encodeURIComponent(romaji)}${english ? `&english=${encodeURIComponent(english)}` : ''}&season=${season}`);
-            const json = await res.json();
-            return json.poster ? [entry.animeId, json.poster as string] as const : null;
-          } catch {
-            return null;
-          }
-        })
-      ).then((pairs) => {
-        if (cancelled) return;
-        const posters = Object.fromEntries(pairs.filter(Boolean) as [number, string][]);
-        if (Object.keys(posters).length > 0) setSeasonPosters(posters);
-      });
     });
 
     return () => { cancelled = true; };
@@ -144,7 +118,6 @@ export default function WatchlistClient() {
               key={entry.animeId}
               entry={entry}
               anime={animeData[entry.animeId]}
-              seasonPoster={seasonPosters[entry.animeId]}
               language={language}
               onRemove={remove}
               onUpdateStatus={updateStatus}
@@ -170,11 +143,10 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
 }
 
 function WatchlistCard({
-  entry, anime, seasonPoster, language, onRemove, onUpdateStatus,
+  entry, anime, language, onRemove, onUpdateStatus,
 }: {
   entry: WatchlistEntry;
   anime?: AnimeBasic;
-  seasonPoster?: string;
   language: string;
   onRemove: (id: number) => void;
   onUpdateStatus: (id: number, status: WatchlistStatus) => void;
@@ -183,7 +155,7 @@ function WatchlistCard({
   const slug = anime
     ? `${anime.title.english ?? anime.title.romaji}`.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
     : entry.animeSlug;
-  const coverSrc = seasonPoster || anime?.coverImage?.large || entry.coverImage;
+  const coverSrc = anime?.coverImage?.large || entry.coverImage;
   const progress = entry.currentEpisode && entry.totalEpisodes
     ? Math.min(100, (entry.currentEpisode / entry.totalEpisodes) * 100)
     : null;

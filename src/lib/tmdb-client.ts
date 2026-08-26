@@ -140,16 +140,6 @@ export async function getTmdbShowSeasons(tmdbId: number): Promise<TmdbSeasonName
   }
 }
 
-export async function getTmdbSeasonPoster(tmdbId: number, season: number): Promise<string | null> {
-  try {
-    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}/season/${season}?api_key=${TMDB_API_KEY}&language=de-DE`);
-    const data = await res.json();
-    return data.poster_path ? `${TMDB_IMG_POSTER}${data.poster_path}` : null;
-  } catch {
-    return null;
-  }
-}
-
 export async function getTmdbSeasonThumbnails(tmdbId: number, seasons: number[]): Promise<Record<number, Record<number, string>>> {
   const thumbnails: Record<number, Record<number, string>> = {};
 
