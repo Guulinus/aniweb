@@ -55,3 +55,6 @@ aniweb/
 # stray/scratch files
 scratch_look*.mjs
 *:Zone.Identifier
+
+# private list of fleet Pi hostnames — see scripts/fleet.conf.example
+scripts/fleet.conf

@@ -1,0 +1,15 @@
+# Fleet targets for scripts/deploy-fleet.sh
+#
+# One line per Pi: <name> <ssh-host> <remote-app-dir>
+# <ssh-host> should be an SSH key–authenticated host — either an entry from
+# ~/.ssh/config (recommended, e.g. an alias pointing at the Tailscale IP) or
+# a raw user@host/user@tailscale-ip.
+#
+# Copy this file to fleet.conf (gitignored — it's a private list of your
+# devices) and fill in real entries once the other Pis are set up with
+# Tailscale + SSH keys.
+#
+# Example:
+# main      pi-main       /home/pi/aniweb
+# friend1   pi-friend1    /home/pi/aniweb
+# friend2   pi-friend2    /home/pi/aniweb
