@@ -1,5 +1,12 @@
-// Simple in-memory database for TV build
-// Uses cached data instead of SQLite for compatibility
+// In-memory read cache for the AniList anime catalog.
+//
+// This is NOT the database itself — it's a fast lookup layer in front of the
+// real SQLite database (`data/anime.db`). `src/lib/sync.ts` populates it via
+// `setCacheData()` on startup (`loadCacheFromDb()`) and every 12h
+// (`syncDatabase()`). Querying SQLite directly on every request would be
+// fine too, but this avoids repeated disk reads for hot paths like the
+// homepage. If the process restarts, `loadCacheFromDb()` refills this from
+// `anime.db`, so data is not actually lost — only the in-memory cache is.
 
 const cache = new Map<number, any>();
 const popularCache: any[] = [];
@@ -11,6 +18,7 @@ export interface AnimeRow {
   title_english: string | null;
   title_native: string | null;
   cover_image: string;
+  cover_color: string | null;
   banner_image: string | null;
   format: string;
   status: string;
@@ -41,8 +49,8 @@ export function getDb() {
         }
         if (sql.includes('title_romaji LIKE')) {
           const q = args[0].toLowerCase();
-          return Array.from(cache.values()).filter((a: AnimeRow) => 
-            a.title_romaji.toLowerCase().includes(q) || 
+          return Array.from(cache.values()).filter((a: AnimeRow) =>
+            a.title_romaji.toLowerCase().includes(q) ||
             (a.title_english && a.title_english.toLowerCase().includes(q))
           ).slice(args[2] || 0, (args[2] || 0) + (args[0] || 20));
         }
@@ -81,8 +89,8 @@ export function getTrendingAnime(limit = 20, offset = 0): AnimeRow[] {
 
 export function searchAnimeDb(query: string, limit = 20, offset = 0): AnimeRow[] {
   const q = query.toLowerCase();
-  const results = Array.from(cache.values()).filter((a: AnimeRow) => 
-    a.title_romaji.toLowerCase().includes(q) || 
+  const results = Array.from(cache.values()).filter((a: AnimeRow) =>
+    a.title_romaji.toLowerCase().includes(q) ||
     (a.title_english && a.title_english.toLowerCase().includes(q))
   );
   return results.slice(offset, offset + limit);

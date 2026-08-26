@@ -9,7 +9,7 @@ const VALID_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
 export async function GET(request: NextRequest) {
   const pageParam = request.nextUrl.searchParams.get('page');
   const perPageParam = request.nextUrl.searchParams.get('perPage');
-  const genres = request.nextUrl.searchParams.getAll('genre');
+  const genres = request.nextUrl.searchParams.getAll('genre').filter((g) => g.toLowerCase() !== 'hentai');
   const status = request.nextUrl.searchParams.get('status') || undefined;
   const format = request.nextUrl.searchParams.get('format') || undefined;
   const sort = request.nextUrl.searchParams.get('sort') || undefined;

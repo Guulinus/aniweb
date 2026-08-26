@@ -97,7 +97,7 @@ function BrowseContent() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 pt-20 pb-8">
       <h1 className="text-3xl font-bold text-white mb-6">{browse}</h1>
 
       <div className="space-y-4 mb-8">
@@ -206,7 +206,7 @@ function BrowseContent() {
 
 export default function BrowsePage() {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-8">
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-20 pb-8">
       <div className="h-8 bg-gray-800 rounded w-32 mb-6 animate-pulse" />
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {Array.from({ length: 10 }).map((_, i) => (

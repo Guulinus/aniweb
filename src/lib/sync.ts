@@ -1,13 +1,13 @@
 import Database from 'better-sqlite3';
 import path from 'path';
-import { setCacheData, setLastSyncTime } from './db';
+import { setCacheData, setLastSyncTime } from './animeCache';
 
 const DB_PATH = path.join(process.cwd(), 'data/anime.db');
 
 interface AniListMedia {
   id: number;
   title: { romaji: string; english: string | null; native: string | null };
-  coverImage: { extraLarge: string; large: string; medium: string };
+  coverImage: { extraLarge: string; large: string; medium: string; color: string | null };
   bannerImage: string | null;
   format: string;
   status: string;
@@ -42,6 +42,7 @@ function ensureTables(db: Database.Database) {
       title_english TEXT,
       title_native TEXT,
       cover_image TEXT,
+      cover_color TEXT,
       banner_image TEXT,
       format TEXT,
       status TEXT,
@@ -55,6 +56,13 @@ function ensureTables(db: Database.Database) {
     );
     CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER);
   `);
+
+  // Migration for databases created before cover_color existed.
+  try {
+    db.exec('ALTER TABLE anime ADD COLUMN cover_color TEXT');
+  } catch {
+    // Column already exists.
+  }
 }
 
 async function syncPopularAnime(db: Database.Database) {
@@ -65,7 +73,7 @@ async function syncPopularAnime(db: Database.Database) {
         media(type: ANIME, sort: [POPULARITY_DESC], isAdult: false) {
           id
           title { romaji english native }
-          coverImage { extraLarge large medium }
+          coverImage { extraLarge large medium color }
           bannerImage
           format
           status
@@ -93,10 +101,10 @@ async function syncPopularAnime(db: Database.Database) {
 
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO anime (
-        id, title_romaji, title_english, title_native, cover_image, banner_image,
-        format, status, episodes, average_score, year, genres, description, 
+        id, title_romaji, title_english, title_native, cover_image, cover_color, banner_image,
+        format, status, episodes, average_score, year, genres, description,
         episode_thumbnails, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     for (const m of media) {
@@ -115,6 +123,7 @@ async function syncPopularAnime(db: Database.Database) {
         m.title.english ?? null,
         m.title.native ?? null,
         m.coverImage.extraLarge || m.coverImage.large,
+        m.coverImage.color ?? null,
         m.bannerImage ?? null,
         m.format ?? null,
         m.status ?? null,

@@ -58,7 +58,7 @@ function SearchContent() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 pt-20 pb-8">
       <form onSubmit={handleSearch} className="mb-6">
         <div className="relative max-w-xl">
           <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -133,7 +133,7 @@ function SearchContent() {
 
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 py-8">
+    <Suspense fallback={<div className="max-w-7xl mx-auto px-4 pt-20 pb-8">
       <div className="h-10 bg-gray-800 rounded-xl max-w-xl mb-6 animate-pulse" />
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
         {Array.from({ length: 10 }).map((_, i) => (

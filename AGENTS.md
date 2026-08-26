@@ -4,169 +4,360 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-## Project: AniRoll – German/English anime streaming site
+# AniRoll — German/English Anime Streaming Platform
 
-### Tech Stack
-- Next.js 14, TypeScript, Tailwind CSS, standalone output
-- AniList GraphQL API (metadata), TMDB API (thumbnails)
-- AniWorld.to scraper (German streams via hosters: VOE, Vidmoly)
-- Auth: JWT (jose) + bcryptjs + cookie-based sessions
-- SQLite for local DB sync (better-sqlite3), file-based auth (data/auth.json, data/user_{id}.json)
+## What Is This Project?
 
-### Constraints
-- Pi password: `Guulinus2` · Pi IP: `192.168.178.84` · Pi: linux-arm64 · Local: linux-x64
-- User tests locally first, only deploys to Pi after local success
-- `images.unoptimized: true` because Pi ARM64 lacks `sharp`
-- `serverExternalPackages`: `cheerio`, `jsdom`
-- `next.config.mjs` (NOT `.ts`)
-- Footer hidden on `/watch/` and `/filme/*/watch` routes
-- **No ads** — direct m3u8/mp4 extraction only, no iframe fallbacks
+AniRoll is a self-hosted anime streaming site that:
+- Fetches metadata from **AniList** (GraphQL API)
+- Scrapes German streams from **AniWorld.to** (direct m3u8 extraction, NO iframes)
+- Uses **TMDB** for episode thumbnails, durations, and film posters
+- Supports **Filmpalast.to** and **Movie2k.ch** for the `/filme` section
+- Has user accounts with JWT auth, watchlist sync, and watch progress tracking
+- Targets a **Raspberry Pi** (linux-arm64) for production deployment
 
-### Abbreviations
-- **HP** = Homepage (`/`)
-- **AP** = Anime detail page (`/anime/[slug]`)
-- **WP** = Watch page (`/watch/[animeSlug]/[season]/[episode]`)
+**Philosophy**: No ads, no iframe players, no DRM — direct stream extraction only. If a hoster fails, the user sees an error, not an ad page.
 
-### Navigation Design
-- Navbar: `fixed top-0 left-0 right-0 z-50`, solid `bg-[#0a0a0f]`, container `max-w-[1400px] mx-auto px-4 lg:px-8`
-- Mobile search icon in navbar (not separate hero search bar)
-- Nav text `text-[15px]`, logo `text-xl`, nav links `px-3.5 py-2.5`
-- Avatar: `ring-2 ring-white/10` with dropdown chevron
+---
 
-### Homepage (HP)
-- Static hero background image (`/hero-bg.jpg`), NO anime carousel
-- Hero: `pt-14 md:pt-16` (navbar overlap), `mb-14`, content `justify-end` with `pb-12`
-- Max container: `max-w-[1400px] mx-auto`
-- Each section fetches independently (no cascade)
-- **AniList covers**: All homepage sections use AniList `extraLarge` coverImage directly (~225x318px). NO IMDB/TMDB poster replacement on HP — user reverted this (IMDB posters were wrong artwork). `HorizontalAnimeSection` used directly, no PosterSection wrapper.
-- Sections: Weiterschauen, Beliebt, Trend, Seasonal, Neu auf AniRoll, Für dich empfohlen, Genre rows
-- **Weiterschauen-Cover**: Bevorzugt `anime.coverImage.large` (extraLarge) VOR `entry.coverImage` (beim Hinzufügen gespeichert, oft medium/low-res)
-- Last section named "Für dich empfohlen"
-- Skeleton section at bottom (6 placeholders, auto-hides after 8s)
-- Horror genre excluded from all homepage sections
+## Environment
 
-### HorizontalAnimeSection (shared component)
-- Card width: `w-[180px]`, `aspect-[2/3]`, `rounded-xl`
-- Hover: `scale-105`, `group-hover:ring-white/[0.08]`
-- EP badge: `bg-black/60 backdrop-blur-sm rounded-md`, `flex items-center leading-none`
-- Scroll: ONLY right button, `opacity-0 group-hover/row:opacity-100`
-- Scroll button: `bg-[#16161f]/90 hover:bg-[#1f1f2e] shadow-xl shadow-black/40 border border-white/[0.06] backdrop-blur-sm`, size `w-11 h-11`
-- "Alle anzeigen" link: `opacity-0 group-hover/section:opacity-100`
-- Section title: `text-lg md:text-xl`
-- Right fade: `w-20`
+### Machines
+| Machine | IP | OS | Role |
+|---------|----|----|------|
+| Local dev | localhost | linux-x64 | Code + test |
+| Pi | `192.168.178.84` | linux-arm64 | Production |
+
+### Pi Access
+```
+sshpass -p 'Guulinus2' ssh pi@192.168.178.84
+```
+
+### API Keys (hardcoded in code, NOT env vars)
+| Key | Where | Used For |
+|-----|-------|----------|
+| `TMDB_API_KEY=7a6f6473c46188721c31804f166eb53d` | `src/lib/tmdb-client.ts` | TMDB thumbnails, durations, film info |
+| `AniList` | GraphQL endpoint, no key needed | Anime metadata |
+| `AniWorld.to` | Scraper, no auth needed | German stream links |
+
+---
+
+## Project Structure
+
+```
+/home/sam/aniweb/
+├── src/
+│   ├── app/                        # Next.js App Router
+│   │   ├── page.tsx                # Homepage
+│   │   ├── layout.tsx              # Root layout (providers, fonts, navbar/footer)
+│   │   ├── globals.css             # Theme system, CSS vars, animations
+│   │   ├── not-found.tsx           # 404 page
+│   │   ├── anime/[slug]/page.tsx   # Anime detail page (AP)
+│   │   ├── watch/[animeSlug]/[season]/[episode]/page.tsx  # Watch page (WP)
+│   │   ├── search/page.tsx         # Search with input, skeleton loading
+│   │   ├── browse/page.tsx         # Browse with genre/status/sort filters
+│   │   ├── browse/page.tsx         # Browse with filters
+│   │   ├── calendar/page.tsx       # Weekly anime calendar
+│   │   ├── filmy/                  # Film section (isolated from anime)
+│   │   │   ├── page.tsx            # Film landing
+│   │   │   ├── browse/page.tsx     # Film browse
+│   │   │   ├── [slug]/page.tsx     # Film detail
+│   │   │   └── [slug]/watch/page.tsx # Film watch
+│   │   ├── history/page.tsx        # Watch history
+│   │   ├── login/page.tsx          # Login/register
+│   │   ├── profile/[id]/page.tsx   # User profile
+│   │   ├── settings/page.tsx       # Theme + language settings
+│   │   ├── watchlist/page.tsx      # User watchlist
+│   │   ├── seasonal/page.tsx       # Seasonal anime
+│   │   ├── random/page.tsx         # Random anime redirect
+│   │   └── api/                    # 37+ API routes (see API section)
+│   ├── components/                 # 20 React components
+│   ├── hooks/                      # 6 custom hooks
+│   ├── lib/                        # 16 utility/context/client files
+│   └── types/index.ts              # All TypeScript types
+├── data/                           # Runtime data (gitignored)
+│   ├── auth.json                   # User auth data
+│   ├── user_{id}.json              # Per-user sync data
+│   ├── anime.db                    # SQLite anime cache
+│   └── avatars/                    # User avatar images
+├── public/                         # Static assets
+├── next.config.mjs                 # Next.js config (NOT .ts)
+├── tailwind.config.js              # Tailwind config
+├── tsconfig.json                   # TypeScript config (target: ES2017)
+└── AGENTS.md                       # This file
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 14 (`standalone` output) |
+| Language | TypeScript (strict, target ES2017) |
+| Styling | Tailwind CSS 3.4 |
+| Font | Inter via `next/font/google` (`--font-inter` CSS var) |
+| Video Player | Artplayer 5.4 + HLS.js 1.6 |
+| Auth | JWT (`jose` 6.x) + bcryptjs + httpOnly cookies |
+| Scraping | Custom `fetch`-based scraper (AniWorld, Filmpalast, Movie2k) |
+| HTML Parsing | `cheerio` 1.2 + `jsdom` 29 (server-side only) |
+| Cache | `node-cache` 5.1 (in-memory, 1h TTL for AniWorld pages) |
+| Database | `better-sqlite3` (anime cache, synced from AniList every 12h) |
+| Runtime | Node.js on Pi (systemd, `--max-old-space-size=384`) |
+
+---
+
+## Abbreviations
+
+| Abbr | Page | Route |
+|------|------|-------|
+| **HP** | Homepage | `/` |
+| **AP** | Anime Detail | `/anime/[slug]` |
+| **WP** | Watch Page | `/watch/[animeSlug]/[season]/[episode]` |
+
+---
+
+## Key Components
+
+### EpisodeList (`src/components/EpisodeList.tsx`)
+The most complex shared component. Renders season tabs + episode grid on AP and WP.
+
+**Props**: `animeSlug`, `aniworldSlug`, `animeId`, `seasons`, `defaultSeason`, `episodeThumbnails`, `episodeDurations`, `movies`, `movieSlugs`
+
+**Tab logic**:
+- Season 0 = "Filme" tab (AniWorld films + AniList movie relations)
+- Seasons > 0 = "Staffel N" tabs
+- `activeSeason` defaults to `defaultSeason || 1`
+- `isFilmsTab = activeSeason === 0 || activeSeason === -1`
+
+**Film card rendering**: TMDB poster from `/api/tmdb/film-info`, runtime in Std/Min format, no S0E1 label
+
+**Episode card rendering**: TMDB thumbnail, S/E label, duration, watched checkmark, progress bar, "Weiterschauen" badge
+
+**State**: Watch data from localStorage (`watched:{animeId}`, `lastWatched:{animeId}`, `watchPosition:{animeId}:{season}:{ep}`)
+
+### HorizontalAnimeSection
+- Card: `w-[180px]`, `aspect-[2/3]`, `rounded-xl`
+- Hover: `scale-105`
+- EP badge: `bg-black/60 backdrop-blur-sm rounded-md`
+- Scroll: right button only, `opacity-0 group-hover/row:opacity-100`
 - Uses `group/row` and `group/section` classes
-- Cover images: AniList `extraLarge` used directly
+- **Memoized** with `React.memo`
 
-### Anime Detail Page (AP)
-- Cover: AniList `coverImage.large`
-- Badges: format, episodes (EP), year, status — NO score badge, NO star rating
-- Genres: `flex flex-wrap gap-2 mb-5`, each tag `flex items-center` for vertical centering
-- Watchlist button: SVG checkmark icon only (no duplicate ✓ text)
-- Relations displayed as cards below main info
+### VideoPlayer (`src/components/VideoPlayer.tsx`)
+- Uses Artplayer (not native video)
+- HLS.js for m3u8 streams with Referer injection
+- Language buttons, server dropdown, quality dropdown
+- Auto-advance next episode
+- Skip intro/outro via AniSkip API
+- Keyboard shortcuts overlay
 
-### Watch Page (WP)
-- Back link above title: "← Zurück zum Anime"
-- Title + episode name under S/E number
-- **Filme (staffel-0)**: Bei seasonNum 0 wird nur der Filmtitel angezeigt (kein "Staffel 0 · Episode N")
-- **Filme-Tab auf AP (EpisodeList)**: staffel-0-Filme werden als Filmkarten gerendert — TMDB-Poster (`/api/tmdb/film-info`), Laufzeit (Std/Min), kein S0E1-Label
-- **Episode list dropdown**: Toggle button "▾ Episoden (N)" with animated open/close (`maxHeight` transition, `duration-300`)
-- Inside dropdown: Season tabs (`flex flex-wrap gap-2 mb-5`) + Episode grid (`grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3`) — always 4 per row max
-- Active season tab: `bg-theme-primary text-white`
-- **TMDB thumbnails**: Separate useEffect fetches per-season thumbnails via `/api/tmdb/thumbnails`. Re-fetches when `displaySeason` or `animeTitle` changes. Uses `animeTitleRef.current` to avoid stale closure issues.
-- `pb-32` bottom padding to avoid bottom bar overlap
-- Auto-quality selection: Language priority Ger-Dub > Ger-Sub > Eng-Sub, then m3u8 > mp4, then resolution
+### Skeleton Components (`src/components/Skeleton.tsx`)
+- `SkeletonCard`, `SkeletonGrid`, `SkeletonText`, `SkeletonEpisodeGrid`, `SkeletonWatchPage`, `SkeletonBanner`
+- All use **deterministic widths** (no `Math.random()` — causes hydration mismatches)
+- Used as Suspense fallbacks on all pages
 
-### VideoPlayer
-- Autoplay, language buttons, Server dropdown (hoster list per language)
-- Auto quality dropdown with quality options ("Auto (Best)", specific resolutions)
-- HLS.js Referer injection: Vidmoly `https://vidmoly.to/`, VOE `https://voe.sx/`
-- Keyboard shortcuts hint with `backdrop-blur-sm`
+---
 
-### Watchlist Page
-- Season dropdown + expandable episode grid with TMDB thumbnails
-- 4-column grid, animated open/close
-- "Weiterschauen →" link per entry
-- `pb-24` bottom spacing
+## Theme System
 
-### Film Section (`/filme`)
-- Fully redesigned, isolated section with own landing, detail, and watch pages
-- FilmCard, HorizontalMovieSection, MovieGrid components
+### Presets (`src/lib/SettingsContext.tsx`)
+```typescript
+THEME_PRESETS = {
+  aniroll:      { primary: '#a855f7', hover: '#9333ea' },  // Purple (default)
+  crunchyroll:  { primary: '#f97316', hover: '#ea580c' },  // Orange
+  netflix:      { primary: '#e50914', hover: '#b20710' },  // Red
+  emerald:      { primary: '#10b981', hover: '#059669' },  // Green
+  sky:          { primary: '#0ea5e9', hover: '#0284c7' },  // Blue
+  rose:         { primary: '#f43f5e', hover: '#e11d48' },  // Rose
+  custom:       { primary: userColor, hover: computed },    // User-defined
+}
+```
 
-### Auth System
-- `src/lib/auth.ts`: JWT sign/verify (`jose`), password hash/verify (`bcryptjs`)
-- Cookie: `aniroll_session`, httpOnly, path `/`, sameSite `lax`, 30d
-- `req.cookies.get()` returns empty in standalone; use `cookies()` from `next/headers`
-- AuthGate: Simple circle spinner loading screen (`border-t-theme-primary rounded-full animate-spin`)
-- Loading screen blocks page until auth completes
+### CSS Variables (set on `<html data-theme="...">`)
+```css
+--bg-primary: #0a0a0f          --bg-secondary: #111827
+--color-primary: #a855f7       --color-primary-hover: #9333ea
+--color-primary-soft: rgba(168, 85, 247, 0.2)
+--color-primary-border: rgba(168, 85, 247, 0.3)
+--color-primary-shadow: rgba(168, 85, 247, 0.25)
+```
+
+### Utility Classes
+Use these for theme-aware styling: `.bg-theme-primary`, `.text-theme-primary`, `.bg-theme-hover`, `.border-theme-primary`, `.ring-theme-primary`, `.shadow-theme-primary`, `.bg-theme-soft`
+
+### Flash Prevention
+Layout has inline `<script>` that reads `localStorage.anirollSettings` and applies `data-theme` + CSS variables before first paint.
+
+---
+
+## Streaming Architecture
+
+### Flow: Anime Detail → Watch Page → Video
+
+```
+1. AP loads → /api/aniworld/find?title=X → returns {slug, seasons[]}
+2. User clicks episode → /watch/slug/season/episode
+3. WP calls /api/aniworld/episode/slug/season/episode
+4. Route handler:
+   a. getEpisodeStreamLinks() → fetches AniWorld page, extracts <li data-lang-key data-link-id>
+   b. resolveRedirect() for each link (parallel, 10s timeout each)
+   c. extractDirectUrl() for each resolved URL (VOE, Vidmoly, etc.)
+   d. checkHlsQuality() for m3u8 links
+   e. Sort by: Language (Ger-Dub > Ger-Sub > Eng-Sub) > Quality > HLS > Hoster priority
+5. VideoPlayer receives sorted links, auto-selects best
+```
+
+### Timeouts (CRITICAL)
+| Layer | Timeout | Notes |
+|-------|---------|-------|
+| `fetchHtml` (AniWorld page) | **20s** | Per page fetch, NodeCache cached for 1h |
+| `resolveRedirect` | **10s** | Per redirect, runs **in parallel** via `Promise.all` |
+| `extractDirectUrl` (hoster) | **12s** | Per hoster, runs in parallel |
+| Episode API total | **35s** | Global timeout for entire endpoint |
+| `checkHlsQuality` | **5s** | m3u8 quality probe |
+
+### AniWorld Scraper (`src/lib/aniworld-client.ts`)
+- Uses `fetch` with browser-like headers (User-Agent, Accept, Accept-Language)
+- `NodeCache` with 1h TTL for all fetched HTML pages
+- `JSDOM` as fallback for HTML parsing when regex fails
+- Season scraping is **parallel** (all season pages + films fetched via `Promise.all`)
+- Link redirect resolution is **parallel** (`Promise.all`)
+
+### Hoster Extractors (`src/lib/hosters.ts`, 630 lines)
+10 extractors, each returns `{ url: string, hoster: string } | null`:
+
+| Hoster | Method | Notes |
+|--------|--------|-------|
+| **VOE** | 7-step decode chain | ROT13 → junk removal → base64 → char shift -3 → reverse → base64 → JSON. Needs `Referer: https://voe.sx/` |
+| **Vidmoly** | HTML extraction | Needs `Referer: https://vidmoly.to/` + `Cookie: cf_turnstile_demo_pass_{ID}=1` |
+| **Vidara** | 3-domain parallel POST | `vidara.to`, `vidaraa.cc`, `vidara.so` |
+| **DoodStream** | Token + pass_md5 | |
+| **FileMoon** | HTML + packed script fallback | |
+| **Lulustream** | Simple m3u8 extraction | |
+| **Streamtape** | Video URL extraction | |
+| **MixDrop** | Packed script unpack | |
+| **Upstream** | Packed script unpack | |
+| **Vinovo** | Simple m3u8 extraction | |
+
+Uses raw `http`/`https` Node.js modules (not `fetch`). Has `unpack()` for `eval(function(p,a,c,k,e,d){...})` obfuscation.
+
+---
+
+## API Routes Reference
+
+### AniList
+| Route | Purpose |
+|-------|---------|
+| `/api/anilist/search?id=X` or `?q=X` | Search by title or ID |
+| `/api/anilist/popular` | Popular anime |
+| `/api/anilist/trending` | Trending anime |
+| `/api/anilist/seasonal` | Current season |
+| `/api/anilist/recommendations?id=X` | Recommendations by ID |
+| `/api/anilist/browse?genre=X&status=X&sort=X` | Browse with filters |
+| `/api/anilist/genres` | Genre list |
+| `/api/anilist/calendar` | Weekly calendar |
+
+### AniWorld (Scraper)
+| Route | Purpose |
+|-------|---------|
+| `/api/aniworld/find?title=X&year=Y&english=Z` | Find anime → returns `{found, slug, seasons[]}` |
+| `/api/aniworld/find-movie?title=X&year=Y` | Find movie → returns `{found, slug, season, episode}` |
+| `/api/aniworld/search?title=X` | Search (returns season numbers, not objects) |
+| `/api/aniworld/series/[slug]` | Full series info → `{available, seasons[]}` |
+| `/api/aniworld/episode/[slug]/[season]/[episode]` | Stream links → `{links[], available}` |
+
+### TMDB
+| Route | Purpose |
+|-------|---------|
+| `/api/tmdb/thumbnails?romaji=X&english=Y&seasons=1,2,3` | Episode thumbnails per season |
+| `/api/tmdb/episode-durations?tmdbId=X&season=N` | Per-episode runtime in minutes |
+| `/api/tmdb/film-info?title=X&title=Y` | Film poster + runtime (in-memory cache 24h) |
+| `/api/tmdb/posters?title=X` | Poster images |
+| `/api/tmdb/trailer?tmdbId=X` | Trailer URL |
+
+### Auth
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/auth/register` | POST | Create user, set `aniroll_session` cookie |
+| `/api/auth/login` | POST | Verify password, set cookie |
+| `/api/auth/logout` | POST | Clear cookie |
+| `/api/auth/me` | GET | Current user info |
+
+### User
+| Route | Purpose |
+|-------|---------|
+| `/api/user/sync` | GET/POST push/pull watchlist, positions, history |
+| `/api/user/avatar` | POST upload avatar |
+| `/api/user/avatar/[userId]` | GET serve avatar |
+| `/api/user/profile` | GET/POST own profile |
+| `/api/user/profile/[id]` | GET other user profile |
+
+### Films (Filmpalast + Movie2k)
+| Route | Purpose |
+|-------|---------|
+| `/api/filmpalast/categories` | Film categories from filmpalast.to |
+| `/api/filmpalast/search?q=X` | Search films |
+| `/api/filmpalast/movie/[slug]` | Film details |
+| `/api/filmpalast/stream/[...id]` | Film stream links |
+
+### Other
+| Route | Purpose |
+|-------|---------|
+| `/api/aniskip/[malId]/[episode]` | Skip intro/outro timings |
+| `/api/kitsu/covers?ids=X,Y` | Kitsu cover images |
+| `/api/proxy/embed?url=X` | Proxy embed pages |
+
+---
+
+## Auth System
+
+- **JWT** via `jose`, signed with secret from `src/lib/auth.ts`
+- **Cookie**: `aniroll_session`, httpOnly, path `/`, sameSite `lax`, 30 day expiry
+- **Storage**: File-based (`data/auth.json`, `data/user_{id}.json`)
+- **Gate**: `AuthGate` component shows spinner until auth check completes
+- **Sync**: On login/register, `syncAfterLogin()` pushes local watchlist to server. On mount, `pullServerData()` fetches merged data.
+- **Merge strategy**: watchlist by animeId (newer wins), positions by key (newer wins), history union
 
 ### Sync Architecture
-- Client → Server: `syncAfterLogin()` on login/register
-- Server merge: `mergeSyncData()` — watchlist by animeId (newer wins), positions by key (newer wins), history union
-- Server → Client: `pullServerData()` GETs merged data
-- Data files: `data/auth.json`, `data/user_{id}.json`, `data/avatars/{userId}.{ext}`
+```
+Client → Server: syncAfterLogin() on login/register
+Server merge: mergeSyncData() — watchlist by animeId (newer wins)
+Server → Client: pullServerData() GETs merged data
+Data: data/auth.json, data/user_{id}.json
+```
 
-### API Routes
-| Route | Purpose |
-|---|---|
-| `POST /api/auth/register` | Creates user, sets cookie |
-| `POST /api/auth/login` | Verifies password, sets cookie |
-| `POST /api/auth/logout` | Clears cookie |
-| `GET /api/auth/me` | Returns current user |
-| `GET/POST /api/user/sync` | Push/pull watchlist, positions, history |
-| `POST /api/user/avatar` | Upload avatar |
-| `GET /api/user/avatar/[userId]` | Serve avatar |
-| `GET /api/anilist/popular` | Popular anime (DB or AniList) |
-| `GET /api/anilist/trending` | Trending anime (DB or AniList) |
-| `GET /api/anilist/seasonal` | Current season anime |
-| `GET /api/anilist/recommendations` | Recommendations by anime ID |
-| `GET /api/anilist/browse` | Browse with genre/status/sort filters |
-| `GET /api/anilist/search` | Search anime by title or ID |
-| `GET /api/anilist/genres` | Genre list |
-| `GET /api/anilist/season-mal` | MAL ID for specific season |
-| `GET /api/tmdb/thumbnails` | TMDB episode thumbnails by romaji + seasons |
-| `GET /api/tmdb/film-info` | Film-Poster + Runtime (Minuten/Jahr) per Titel für Filme-Tab (staffel-0) |
-| `GET /api/filmpalast/categories` | Filme-Seite Kategorien (trending/new/action/comedy) via filmpalast Genre-Seiten |
-| `GET /api/aniworld/search` | Search AniWorld for anime slug |
-| `GET /api/aniworld/series/[slug]` | Series info + seasons + episodes |
-| `GET /api/aniworld/episode/[...id]` | Episode stream links (20s timeout, 8s per hoster) |
-| `GET /api/aniskip/[malId]/[episode]` | Skip intro/outro timing |
+---
 
-### Hoster System (`src/lib/hosters.ts`)
-- **VOE**: 7-step decode (ROT13 → junk removal → base64 → char shift -3 → reverse → base64 → JSON). Extracts m3u8 from `cloudwindow-route.com` CDN. Needs `Referer: https://voe.sx/`
-- **Vidmoly**: Fetch embed page, extract `sources: [{file: "..."}]`. Needs User-Agent, Referer, `Cookie: cf_turnstile_demo_pass_{ID}=1`
-- **Vidara**: 3-domain parallel (`vidara.to`, `vidara.so`, `vidara.cc`) → POST `/api/stream` with `{filecode, device: "web"}`
+## Type Definitions (`src/types/index.ts`)
 
-### Cover Image Strategy
-- **AniList**: `extraLarge` coverImage (~225x318px portrait) — used directly for ALL HP covers. IMDB/TMDB poster replacement was reverted (user preference)
-- **TMDB**: `w500` for episode thumbnails and `w780` for banner/film images
+Key types:
+- `AnimeBasic` — id, title, coverImage, format, status, episodes, genres
+- `AnimeDetail extends AnimeBasic` — description, relations, bannerImage
+- `AniworldSeason` — `{ seasonNumber: number, episodes: [{number, title, slug}] }`
+- `StreamLink` — `{ hoster, url, language?, hasAds?, quality? }`
+- `WatchlistEntry` — `{ animeId, animeSlug, title, coverImage, status, currentEpisode?, aniworldSlug? }`
+- `RelatedMovie` — `{ id, title, coverImage?, year?, relationType }`
+- `ThemeSettings` — `{ theme: 'aniroll'|'crunchyroll'|'netflix'|'emerald'|'sky'|'rose'|'custom', customColor: string }`
+- `FilmInfo` (local to EpisodeList) — `{ posterImage, runtimeMinutes, year }`
 
-### German Anime Providers (Research Summary)
-1. **AniWorld.to** — Primary streaming source, VOE/Vidmoly hosters, German Dub/Sub/Eng Sub
-2. **VOE.sx** — Hoster with direct m3u8 streams, up to 720p
-3. **Nyaa.si** — Torrent site, search "Deutsch dub", uploaders: [Fuchs], [Lycan], [BOLS] — BluRay Remux 1080p MKV
-4. **Anime-Loads.org** — German anime DDL/streaming (may be down)
-5. **Crunchyroll DE** — 300+ anime with German dub (legal, DRM)
-6. **RTL+** — German anime via Sony/Crunchyroll deal (legal)
-7. **aniSearch.de** — Tracks German streaming availability per provider
-8. **SenpaiDub** — German dub/sub availability tracker
+---
 
-### Git
-- Remote: `https://github.com/Guulinus/aniweb.git` (branch: main)
-- **No credential helper configured** — push with PAT inline (ask user for current PAT, do NOT hardcode in repo):
-  ```bash
-  git push https://<PAT>@github.com/Guulinus/aniweb.git main
-  ```
-- **NEVER commit PAT or secrets to the repo — GitHub push protection blocks it**
-- Commit only when user explicitly requests
-- Backup (source only, no node_modules/.next/.git/data): `/home/sam/aniweb-back`
-- Copy AGENTS.md to backup after updates: `cp AGENTS.md /home/sam/aniweb-back/AGENTS.md`
+## Build & Deploy
 
-### Build & Deploy
+### Build
 ```bash
-npm run build                    # local build
-# Deploy:
+cd /home/sam/aniweb
+npm run build
+```
+Output: `.next/` with `standalone/` server.
+
+### Deploy to Pi
+```bash
+# 1. Sync .next directory
 rsync -av --timeout=60 .next/ pi@192.168.178.84:aniweb/.next/
-# CRITICAL: Remove old standalone static, then copy fresh + fix BUILD_ID:
+
+# 2. Fix standalone (CRITICAL: must rm -rf first, cp doesn't overwrite changed files)
 sshpass -p 'Guulinus2' ssh pi@192.168.178.84 \
   'rm -rf /home/pi/aniweb/.next/standalone/.next/static && \
    cp -r /home/pi/aniweb/.next/static /home/pi/aniweb/.next/standalone/.next/static && \
@@ -174,18 +365,167 @@ sshpass -p 'Guulinus2' ssh pi@192.168.178.84 \
    cp /home/pi/aniweb/.next/BUILD_ID /home/pi/aniweb/.next/standalone/.next/BUILD_ID && \
    fuser -k 3000/tcp 2>/dev/null; sleep 2; \
    cd /home/pi/aniweb/.next/standalone && nohup node server.js > ~/aniweb.log 2>&1 &'
-# Verify: sleep 3 && curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/
+
+# 3. Verify
+sleep 3 && curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/
 ```
 
-### Important Notes
-- **CRITICAL**: After rsync, must `rm -rf` standalone `.next/static` BEFORE `cp -r` — otherwise `cp -r` doesn't overwrite changed files (different hashes). Also `cp` the BUILD_ID file.
-- `systemctl restart aniweb` fails with EADDRINUSE — must `fuser -k 3000/tcp` first
-- Pi DNS: `/etc/resolv.conf` set to `8.8.8.8` + `8.8.4.4` + `192.168.178.6`
-- AniList rate limiting: ~90 req/min
-- `regex /s` flag not supported at current tsconfig target
-- AniWorld series API: `{seasonNumber, episodes: [{number, title, slug}]}` (NOT `{season, episode}`)
-- TMDB_API_KEY: `7a6f6473c46188721c31804f166eb53d`
-- TMDB_IMG_BASE: `https://image.tmdb.org/t/p/w780`
-- HLS.js config: `enableWorker: true`, `lowLatencyMode: false`
-- Pi systemd: `LimitNOFILE=4096`, `NODE_OPTIONS=--max-old-space-size=384`
-- Pi backup location: `/home/sam/aniweb-back` (source only, no node_modules/.next/.git/data)
+### Deploy Rules
+- **ALWAYS `rm -rf` standalone `.next/static` BEFORE `cp -r`** — otherwise old files aren't overwritten
+- **ALWAYS copy BUILD_ID** — matches standalone to the right build
+- **Kill existing server** before starting new one (`fuser -k 3000/tcp`)
+- **Test locally first** (see Testing section), only deploy to Pi after local success
+- **Verify with curl** after deploy: `curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/`
+
+### Testing
+
+**You CANNOT test streaming locally** — AniWorld is unreachable from the dev machine (DNS/network issues). The `find` and `episode` API calls will fail locally. **Always deploy to Pi for streaming tests.**
+
+**What you CAN test locally**:
+- `npm run build` — must succeed without errors
+- Page rendering, component logic, theme system
+- AniList API calls (these work locally)
+- TypeScript compilation
+
+**Pi streaming test commands**:
+```bash
+# Test find API
+curl -s --max-time 30 "http://192.168.178.84:3000/api/aniworld/find?title=Jujutsu+Kaisen&year=2020&english=JUJUTSU+KAISEN"
+
+# Test episode streams
+curl -s --max-time 50 "http://192.168.178.84:3000/api/aniworld/episode/jujutsu-kaisen/1/1"
+
+# Test multiple episodes across different anime
+for ep in "jujutsu-kaisen/1/1" "attack-on-titan/1/1" "demon-slayer-kimetsu-no-yaiba/1/1"; do
+  curl -s --max-time 50 "http://192.168.178.84:3000/api/aniworld/episode/$ep" | \
+    python3 -c "import sys,json; d=json.load(sys.stdin); print(f'$ep: links={len(d.get(\"links\",[]))}')"
+done
+
+# Test page loads
+curl -s -o /dev/null -w "%{http_code}" "http://192.168.178.84:3000/anime/jujutsu-kaisen?id=113415"
+curl -s -o /dev/null -w "%{http_code}" "http://192.168.178.84:3000/watch/jujutsu-kaisen/1/1?id=113415"
+```
+
+---
+
+## Common Gotchas & Debugging
+
+### Build Issues
+- **`Cannot find module './1682.js'`** or similar chunk errors = stale `.next` cache. Fix: `rm -rf .next && npm run build`
+- **Dev server on same port** can overwrite `.next/` and cause issues. Always kill dev server before building: `fuser -k 3000/tcp`
+- **`cp -r` doesn't overwrite** different-hashed files in standalone. Must `rm -rf` first.
+
+### Streaming Issues
+- **"Episode fetch timed out"** — AniWorld pages are slow (especially for popular anime like JJK). If timeout is hit, increase both the route-level timeout AND ensure redirects are parallel
+- **`available: false, links: 0`** — AniWorld might have removed the anime, or the HTML structure changed
+- **`fetch failed`** — Network issue between Pi and AniWorld.to. Check Pi DNS (`/etc/resolv.conf` should have `8.8.8.8`)
+- **VOE links not resolving** — VOE uses aggressive anti-bot. The 7-step decode might need updating if they change obfuscation
+
+### AniWorld Scraper
+- Pages are cached in `NodeCache` for 1h — if you fix a scraping bug, the fix won't apply to cached pages until TTL expires
+- `fetchHtml` uses browser-like headers but AniWorld has Cloudflare — may intermittently fail
+- Season pages are fetched **in parallel** via `Promise.all` (capped implicitly by number of seasons)
+- Film titles are fetched with concurrency of 3
+
+### React/Next.js
+- **No `Math.random()` in components** — causes hydration mismatches. Use deterministic values.
+- **`key={anime.id}`** on EpisodeList forces remount when anime changes
+- **localStorage** must be wrapped in `typeof window === 'undefined'` checks
+- **`useCallback`/`useMemo`** on expensive computations (episode click handlers, progress calculations)
+- **Suspense boundaries** with skeleton fallbacks on all pages
+
+### Authentication
+- `req.cookies.get()` returns empty in standalone mode — use `cookies()` from `next/headers`
+- Cookie name: `aniroll_session`
+- AuthGate blocks rendering until auth check completes
+
+### Timeouts (Recap)
+| What | Timeout | Where |
+|------|---------|-------|
+| AniWorld page fetch | 20s | `aniworld-client.ts` `fetchHtml()` |
+| Redirect resolution | 10s each, parallel | `aniworld-client.ts` `resolveRedirect()` |
+| Hoster extraction | 12s each, parallel | `episode/[...id]/route.ts` |
+| HLS quality check | 5s | `episode/[...id]/route.ts` |
+| Total episode API | 35s | `episode/[...id]/route.ts` |
+
+---
+
+## Navigation & Layout
+
+### Navbar
+- Fixed: `top-0 left-0 right-0 z-50`
+- Background: `bg-[#0a0a0f]/80 backdrop-blur-md`
+- Container: `max-w-[1400px] mx-auto px-4 lg:px-8`
+- Text: `text-[15px]`, logo: `text-xl`, links: `px-3.5 py-2.5`
+- Mobile: hamburger menu with search icon
+- Avatar: `ring-2 ring-white/10` with dropdown chevron
+
+### Footer
+- Background: `bg-[#060609]`, border: `border-white/[0.04]`
+- **Hidden** on `/watch/` and `/filme/*/watch` routes (via `WatchPageLayout.tsx`)
+- ARIA labels on social links
+
+### Containers
+- HP: `max-w-[1400px] mx-auto`
+- AP: `max-w-7xl mx-auto px-4`
+
+---
+
+## Cover Image Strategy
+
+- **AniList `extraLarge`** (~225x318px) used directly for ALL HP anime covers. **NO TMDB poster replacement on HP** (user reverted — IMDB posters were wrong artwork)
+- **TMDB `w500`** for episode thumbnails and `w780` for film posters/banners
+- **Weiterschauen** covers prefer `anime.coverImage.large` over `entry.coverImage` (the latter is often lower quality, saved at add-time)
+
+---
+
+## i18n (Language Support)
+
+- Two languages: **German (de)** and **English (en)**
+- Hook: `useLanguage()` from `src/hooks/useLanguage.tsx`
+- Pattern: `const { language } = useLanguage(); return language === 'de' ? 'Deutsch' : 'English';`
+- Stored in localStorage key `anirollLang`
+- All UI text is inline-conditional, no translation files
+
+---
+
+## Watchlist
+
+- Stored in localStorage key `watchlist` (array of `WatchlistEntry`)
+- CRUD via `useWatchlist()` hook: `add`, `remove`, `updateStatus`, `updateProgress`, `isInWatchlist`, `getEntry`
+- Synced to server via `syncAfterLogin()` / `pullServerData()`
+- Merge strategy: watchlist by animeId (newer wins)
+
+---
+
+## Provider Hierarchy (layout.tsx)
+
+```
+ErrorBoundary
+  └─ SettingsProvider          (theme + language prefs)
+    └─ AuthProvider            (JWT auth state)
+      └─ LanguageProvider      (DE/EN UI language)
+        └─ TVNavigationWrapper (D-pad remote control)
+          └─ ToastProvider     (notification system)
+            └─ AuthGate        (loading spinner gate)
+              ├─ Navbar
+              ├─ {children}
+              └─ Footer (conditionally hidden via WatchPageLayout)
+```
+
+---
+
+## Important Notes
+
+- **NEVER use `fetch` library** — the project uses raw `http`/`https` Node.js modules for hoster extraction
+- **`regex /s` flag not supported** at ES2017 target — use `[\s\S]` instead
+- **AniList rate limiting**: ~90 req/min — retry logic is built into `anilist.ts`
+- **Pi systemd**: `LimitNOFILE=4096`, `NODE_OPTIONS=--max-old-space-size=384`
+- **Pi DNS**: `/etc/resolv.conf` set to `8.8.8.8` + `8.8.4.4` + `192.168.178.6`
+- **Backup location**: `/home/sam/aniweb-back` (source only, no node_modules/.next/.git/data)
+- **Git remote**: `https://github.com/Guulinus/aniweb.git` (branch: main)
+- **Push with PAT**: `git push https://<PAT>@github.com/Guulinus/aniweb.git main` (ask user for PAT, NEVER hardcode)
+- **NEVER commit secrets** — GitHub push protection will block it
+- **`images.unoptimized: true`** — Pi ARM64 lacks `sharp`
+- **`serverExternalPackages: ['jsdom', 'cheerio']`** — must be in next.config.mjs
+- **`next.config.mjs`** (NOT `.ts`)

@@ -32,7 +32,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-10">
+    <div className="max-w-2xl mx-auto px-4 pt-20 pb-10">
       <h1 className="text-3xl font-bold text-white mb-8">
         {tab === 'profile' ? 'Einstellungen' : 'Einstellungen'}
       </h1>

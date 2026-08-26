@@ -9,7 +9,7 @@ async function main() {
   const cached = loadCacheFromDb();
   console.log(`[Startup] Loaded ${cached} anime from cache`);
 
-  const lastSyncTime = (await import('../src/lib/db')).getLastSyncTime();
+  const lastSyncTime = (await import('../src/lib/animeCache')).getLastSyncTime();
 
   if (!lastSyncTime || Date.now() / 1000 - lastSyncTime > 12 * 3600) {
     console.log('[Startup] Data is stale, running initial sync...');

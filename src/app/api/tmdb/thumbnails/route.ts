@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchTmdbId, getTmdbSeasonThumbnails } from '@/lib/tmdb-client';
+import { searchTmdbId, getTmdbSeasonThumbnails, getTmdbShowSeasons } from '@/lib/tmdb-client';
 
 export async function GET(request: NextRequest) {
   const romaji = request.nextUrl.searchParams.get('romaji');
@@ -20,11 +20,15 @@ export async function GET(request: NextRequest) {
       ? seasonParam.split(',').map(Number).filter(n => !isNaN(n) && n > 0)
       : [1];
 
-    const thumbnails = await getTmdbSeasonThumbnails(tmdbId, seasonNumbers);
+    const [thumbnails, seasonNames] = await Promise.all([
+      getTmdbSeasonThumbnails(tmdbId, seasonNumbers),
+      seasonNumbers.length > 1 ? getTmdbShowSeasons(tmdbId) : Promise.resolve([]),
+    ]);
 
     return NextResponse.json({
       tmdbId,
       thumbnails,
+      seasonNames,
       source: 'tmdb',
     });
   } catch {

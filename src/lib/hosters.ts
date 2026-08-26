@@ -119,14 +119,14 @@ async function extractVidara(embedUrl: string): Promise<string | null> {
 // VOE EXTRACTOR (7-step decode)
 // ============================================================================
 
-function rot13(str: string): string {
+export function rot13(str: string): string {
   return str.replace(/[a-zA-Z]/g, (c) => {
     const base = c <= 'Z' ? 65 : 97;
     return String.fromCharCode(((c.charCodeAt(0) - base + 13) % 26) + base);
   });
 }
 
-function removeJunk(str: string): string {
+export function removeJunk(str: string): string {
   const junk = ['@$', '^^', '~@', '%?', '*~', '!!', '#&'];
   let result = str;
   for (const j of junk) {
@@ -135,11 +135,11 @@ function removeJunk(str: string): string {
   return result.replace(/_/g, '');
 }
 
-function shiftBack(str: string, amount: number): string {
+export function shiftBack(str: string, amount: number): string {
   return Array.from(str).map((c) => String.fromCharCode(c.charCodeAt(0) - amount)).join('');
 }
 
-function voeDecode7Step(encoded: string): string | null {
+export function voeDecode7Step(encoded: string): string | null {
   try {
     const step1 = rot13(encoded);
     const step2 = removeJunk(step1);
@@ -254,7 +254,7 @@ function voeDecodeLegacy(ct: string, lutsStr: string): Record<string, unknown> {
   }
 }
 
-function unpack(str: string): string | null {
+export function unpack(str: string): string | null {
   try {
     const m = str.match(/}\('(.+)',(\d+),(\d+),'([^']+)'\.split/);
     if (!m) return null;

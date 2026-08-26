@@ -10,6 +10,10 @@ WorkingDirectory=/home/pi/aniweb
 Environment=HOST=0.0.0.0
 Environment=PORT=3000
 Environment=NODE_ENV=production
+# JWT_SECRET must be set here — the app now refuses to start in production without it.
+# Keep the real value OUT of this file (it's committed to git); put it in the
+# EnvironmentFile below instead. Generate one with: openssl rand -base64 48
+EnvironmentFile=-/home/pi/aniweb/.env.production
 ExecStart=/usr/bin/npx tsx /home/pi/aniweb/scripts/start-server.ts
 Restart=always
 RestartSec=10

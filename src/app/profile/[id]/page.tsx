@@ -61,7 +61,7 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-12">
+      <div className="max-w-4xl mx-auto px-4 pt-20 pb-12">
         <div className="animate-pulse space-y-6">
           <div className="flex items-center gap-6">
             <div className="w-20 h-20 bg-gray-800 rounded-full" />
@@ -80,7 +80,7 @@ export default function ProfilePage() {
 
   if (error || !data) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-12 text-center">
+      <div className="max-w-4xl mx-auto px-4 pt-20 pb-12 text-center">
         <h1 className="text-2xl font-bold text-white mb-2">
           {language === 'de' ? 'Benutzer nicht gefunden' : 'User not found'}
         </h1>
@@ -97,7 +97,7 @@ export default function ProfilePage() {
   });
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
+    <div className="max-w-4xl mx-auto px-4 pt-20 pb-12">
       {/* Profile header */}
       <div className="flex items-center gap-6 mb-10">
         <div className="relative w-20 h-20 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">

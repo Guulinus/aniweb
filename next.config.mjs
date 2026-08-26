@@ -29,7 +29,19 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/:path((?!api/).*)',
+        // Personalized pages read from localStorage/cookies at runtime — never let the
+        // browser reuse a cached document for these, or client-side fixes to what they
+        // render can appear "not to work" for anyone who already has the page cached.
+        source: '/(history|watchlist|settings|profile.*|watch.*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-cache, must-revalidate',
+          },
+        ],
+      },
+      {
+        source: '/:path((?!api/|history|watchlist|settings|profile|watch).*)',
         headers: [
           {
             key: 'Cache-Control',

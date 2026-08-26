@@ -1,8 +1,11 @@
 import NodeCache from 'node-cache';
 import { JSDOM } from 'jsdom';
+import fs from 'fs';
+import path from 'path';
 import type { AniworldSeason, StreamLink } from '@/types';
 
-const cache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
+const STD_TTL_SECONDS = 3600;
+const cache = new NodeCache({ stdTTL: STD_TTL_SECONDS, checkperiod: 600 });
 const BASE_URL = 'https://aniworld.to';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 
@@ -12,14 +15,66 @@ const BROWSER_HEADERS: Record<string, string> = {
   'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
 };
 
+// Persist the HTML cache to disk so a server restart doesn't force
+// re-scraping every page within the TTL window (AniWorld is slow and
+// occasionally rate-limits, so a cold cache after every deploy/restart
+// was costly). Writes are debounced; a crash loses at most a few seconds
+// of newly-cached pages, which is an acceptable tradeoff.
+const CACHE_FILE = path.join(process.cwd(), 'data', 'aniworld-cache.json');
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function loadCacheFromDisk() {
+  try {
+    if (!fs.existsSync(CACHE_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8')) as Record<string, { value: string; expiresAt: number }>;
+    const now = Date.now();
+    for (const [url, entry] of Object.entries(raw)) {
+      const remainingMs = entry.expiresAt - now;
+      if (remainingMs > 0) {
+        cache.set(url, entry.value, Math.floor(remainingMs / 1000));
+      }
+    }
+  } catch (err) {
+    console.error('[aniworld-client] Failed to load HTML cache from disk:', err);
+  }
+}
+
+function saveCacheToDisk() {
+  try {
+    const dir = path.dirname(CACHE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const out: Record<string, { value: string; expiresAt: number }> = {};
+    for (const url of cache.keys()) {
+      const value = cache.get<string>(url);
+      const ttl = cache.getTtl(url);
+      if (value && ttl) out[url] = { value, expiresAt: ttl };
+    }
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(out));
+  } catch (err) {
+    console.error('[aniworld-client] Failed to save HTML cache to disk:', err);
+  }
+}
+
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    saveCacheToDisk();
+  }, 5000);
+}
+
+loadCacheFromDisk();
+process.on('exit', saveCacheToDisk);
+
 async function fetchHtml(url: string): Promise<string | null> {
   const cached = cache.get<string>(url);
   if (cached) return cached;
-  
-  const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(15000), cache: 'no-store' });
+
+  const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(20000), cache: 'no-store' });
   if (!res.ok) return null;
   const html = await res.text();
   cache.set(url, html);
+  scheduleSave();
   return html;
 }
 
@@ -100,27 +155,33 @@ export async function getAniworldSeasons(slug: string): Promise<AniworldSeason[]
   const seasonLinks = new Set<number>();
   for (const m of html.matchAll(/staffel-(\d+)/g)) seasonLinks.add(parseInt(m[1]));
 
-  const result: AniworldSeason[] = [];
+  const sortedSeasons = [...seasonLinks].sort((a, b) => a - b);
 
-  const filmeHtml = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/filme');
-  if (filmeHtml) {
-    const films = parseFilmEntries(filmeHtml);
-    if (films.length) {
+  const [filmSeason, ...seasonResults] = await Promise.all([
+    (async (): Promise<AniworldSeason | null> => {
+      const filmeHtml = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/filme');
+      if (!filmeHtml) return null;
+      const films = parseFilmEntries(filmeHtml);
+      if (!films.length) return null;
       const titles = await getFilmTitles(slug, films.map(f => f.number));
-      result.push({
+      return {
         seasonNumber: 0,
         episodes: films.map(f => ({ number: f.number, title: titles[f.number] || `Film ${f.number}`, slug: '' })),
-      });
-    }
-  }
+      };
+    })(),
+    ...sortedSeasons.map(async (sn): Promise<AniworldSeason | null> => {
+      const shtml = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/staffel-' + sn);
+      if (!shtml) return null;
+      const episodes = parseEpisodeRows(shtml);
+      if (!episodes.length) return null;
+      return { seasonNumber: sn, episodes: episodes.sort((a, b) => a.number - b.number) };
+    }),
+  ]);
 
-  for (const sn of [...seasonLinks].sort((a, b) => a - b)) {
-    const shtml = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/staffel-' + sn);
-    if (!shtml) continue;
-    const episodes = parseEpisodeRows(shtml);
-    if (episodes.length) {
-      result.push({ seasonNumber: sn, episodes: episodes.sort((a, b) => a.number - b.number) });
-    }
+  const result: AniworldSeason[] = [];
+  if (filmSeason) result.push(filmSeason);
+  for (const s of seasonResults) {
+    if (s) result.push(s);
   }
   return result;
 }
@@ -137,7 +198,7 @@ export async function getEpisodeStreamLinks(slug: string, season: number, episod
   const html = await fetchHtml(BASE_URL + '/anime/stream/' + slug + '/staffel-' + season + '/episode-' + episode);
   if (!html) return [];
 
-  const links: StreamLink[] = [];
+  const pending: { hoster: string; key: string; lang: string }[] = [];
   const seen = new Set<string>();
   const pattern = /<li[^>]*data-lang-key="(\d+)"[^>]*data-link-id="(\d+)"[^>]*>/g;
 
@@ -157,9 +218,17 @@ export async function getEpisodeStreamLinks(slug: string, season: number, episod
     const linkKey = hoster + '-' + m[1];
     if (seen.has(linkKey)) continue;
     seen.add(linkKey);
-    links.push({ hoster, url: await resolveRedirect(BASE_URL + '/redirect/' + key), language: lang });
+    pending.push({ hoster, key, lang });
   }
-  return links;
+
+  const resolved = await Promise.all(
+    pending.map(async ({ hoster, key, lang }) => ({
+      hoster,
+      url: await resolveRedirect(BASE_URL + '/redirect/' + key),
+      language: lang,
+    }))
+  );
+  return resolved;
 }
 
 export async function findAniworldSeries(title: string, year: number | null, englishTitle?: string | null) {

@@ -1,4 +1,4 @@
-import { getDb, getLastSyncTime } from '@/lib/db';
+import { getDb, getLastSyncTime } from '@/lib/animeCache';
 import type { AnimeBasic } from '@/types';
 
 export async function GET() {

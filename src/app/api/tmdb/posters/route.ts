@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_API_KEY = '7a6f6473c46188721c31804f166eb53d';
-const TMDB_IMG = 'https://image.tmdb.org/t/p/w500';
+const TMDB_IMG = 'https://image.tmdb.org/t/p/w780';
 
 async function searchPoster(title: string, year?: number | null): Promise<string | null> {
   try {

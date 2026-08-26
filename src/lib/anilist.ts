@@ -43,6 +43,7 @@ function mapMediaToBasic(media: any): AnimeBasic {
     coverImage: {
       large: media.coverImage?.extraLarge ?? media.coverImage?.large ?? '',
       medium: media.coverImage?.large ?? media.coverImage?.medium ?? '',
+      color: media.coverImage?.color ?? null,
     },
     bannerImage: media.bannerImage ?? null,
     format: media.format ?? 'UNKNOWN',
@@ -62,7 +63,7 @@ export async function getTrendingAnime(page = 1, perPage = 20): Promise<BrowseRe
       Page(page: $page, perPage: $perPage) {
         pageInfo { currentPage hasNextPage lastPage perPage total }
         media(type: ANIME, sort: [TRENDING_DESC, POPULARITY_DESC], isAdult: false) {
-          id idMal title { romaji english native } coverImage { extraLarge large medium }
+          id idMal title { romaji english native } coverImage { extraLarge large medium color }
           bannerImage
           format status episodes averageScore genres
           startDate { year }
@@ -88,7 +89,7 @@ export async function getPopularAnime(page = 1, perPage = 20): Promise<BrowseRes
       Page(page: $page, perPage: $perPage) {
         pageInfo { currentPage hasNextPage lastPage perPage total }
         media(type: ANIME, sort: [POPULARITY_DESC], isAdult: false) {
-          id title { romaji english native } coverImage { extraLarge large medium }
+          id title { romaji english native } coverImage { extraLarge large medium color }
           bannerImage
           format status episodes averageScore genres
           startDate { year }
@@ -114,7 +115,7 @@ export async function searchAnime(queryStr: string, page = 1, perPage = 20, sort
       Page(page: $page, perPage: $perPage) {
         pageInfo { hasNextPage }
         media(search: $search, type: ANIME, isAdult: false, sort: $sort) {
-          id idMal title { romaji english native } coverImage { extraLarge large medium }
+          id idMal title { romaji english native } coverImage { extraLarge large medium color }
           bannerImage
           format status episodes averageScore genres
           startDate { year }
@@ -136,7 +137,7 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
   const query = `
     query ($id: Int) {
       Media(id: $id, type: ANIME) {
-          id idMal title { romaji english native } coverImage { extraLarge large medium }
+          id idMal title { romaji english native } coverImage { extraLarge large medium color }
         format status episodes averageScore genres
         startDate { year }
         description(asHtml: false) bannerImage
@@ -144,7 +145,7 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
         relations {
           edges {
             relationType
-            node { id title { romaji english } format coverImage { extraLarge large medium } episodes bannerImage startDate { year } }
+            node { id title { romaji english } format coverImage { extraLarge large medium color } episodes bannerImage startDate { year } }
           }
         }
       }
@@ -175,7 +176,8 @@ export async function getGenres(): Promise<string[]> {
   `;
 
   const data = await anilistQuery<any>(query);
-  return data.GenreCollection ?? [];
+  const genres: string[] = data.GenreCollection ?? [];
+  return genres.filter((g) => g.toLowerCase() !== 'hentai');
 }
 
 export async function browseAnime(options: {
@@ -212,7 +214,7 @@ export async function browseAnime(options: {
           genre_in: $genres, status: $status, format: $format,
           seasonYear: $seasonYear, season: $season
         ) {
-          id idMal title { romaji english native } coverImage { extraLarge large medium }
+          id idMal title { romaji english native } coverImage { extraLarge large medium color }
           bannerImage
           format status episodes averageScore genres
           startDate { year }
@@ -235,7 +237,7 @@ export async function browseAnime(options: {
 interface CalendarEntry {
   id: number;
   title: { romaji: string; english: string | null };
-  coverImage: { large: string; medium: string };
+  coverImage: { large: string; medium: string; color: string | null };
   episodes: number | null;
   nextAiringEpisode: { airingAt: number; episode: number } | null;
 }
@@ -252,8 +254,9 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
           airingAt
           media {
             id
+            isAdult
             title { romaji english }
-            coverImage { extraLarge large medium }
+            coverImage { extraLarge large medium color }
             episodes
           }
         }
@@ -274,7 +277,7 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
 
   schedules.forEach((schedule: any) => {
     const anime = schedule.media;
-    if (!anime) return;
+    if (!anime || anime.isAdult) return;
 
     const airingDate = new Date(schedule.airingAt * 1000);
     const dayIndex = airingDate.getDay();
@@ -287,6 +290,7 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
         coverImage: {
           large: anime.coverImage?.extraLarge || anime.coverImage?.large || '',
           medium: anime.coverImage?.large || anime.coverImage?.medium || '',
+          color: anime.coverImage?.color ?? null,
         },
         episodes: anime.episodes,
         nextAiringEpisode: {

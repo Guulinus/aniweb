@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/hooks/useLanguage';
+import CoverImage from '@/components/CoverImage';
 
 interface CalendarEntry {
   id: number;
   title: { romaji: string; english: string | null };
-  coverImage: { large: string; medium: string };
+  coverImage: { large: string; medium: string; color?: string | null };
   episodes: number | null;
   nextAiringEpisode: { airingAt: number; episode: number } | null;
 }
@@ -31,7 +32,7 @@ export default function CalendarPage() {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 pt-20 pb-8">
         <h1 className="text-3xl font-bold text-white mb-6">
           {language === 'de' ? 'Kalender' : 'Calendar'}
         </h1>
@@ -51,7 +52,7 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 pt-20 pb-8">
       <h1 className="text-3xl font-bold text-white mb-6">
         {language === 'de' ? 'Kalender' : 'Calendar'}
       </h1>
@@ -82,12 +83,15 @@ export default function CalendarPage() {
                       href={`/anime/${slug}?id=${anime.id}`}
                       className="flex gap-3 hover:bg-gray-700/50 focus-visible:bg-gray-700/50 p-2 rounded transition"
                     >
-                      <img
-                        src={anime.coverImage.large || anime.coverImage.medium}
-                        alt={title}
-                        className="w-16 h-20 object-cover rounded"
-                        loading="lazy"
-                      />
+                      <div className="relative w-16 h-20 flex-shrink-0 rounded overflow-hidden">
+                        <CoverImage
+                          src={anime.coverImage.large || anime.coverImage.medium}
+                          alt={title}
+                          color={anime.coverImage.color}
+                          sizes="64px"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-white text-sm font-medium truncate">{title}</p>
                         <p className="text-theme-primary text-xs">

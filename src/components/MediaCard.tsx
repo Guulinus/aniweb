@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import type { AnimeBasic } from '@/types';
+import CoverImage from './CoverImage';
 
 interface MediaCardProps {
   anime: AnimeBasic;
@@ -22,12 +23,13 @@ export default function MediaCard({ anime, coverUrl, onMouseEnter, onMouseLeave 
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      <div className="relative overflow-hidden rounded-xl bg-gray-800 aspect-[2/3] ring-1 ring-white/[0.04]">
-        <img
+      <div className="relative overflow-hidden rounded-xl bg-gray-800 aspect-[2/3] ring-1 ring-white/[0.04] transition-all duration-300 group-hover:-translate-y-1 group-focus-visible:-translate-y-1 group-hover:shadow-[0_18px_38px_-12px_var(--color-primary-shadow)] group-focus-visible:shadow-[0_18px_38px_-12px_var(--color-primary-shadow)]">
+        <CoverImage
           src={imgSrc}
           alt={title}
+          color={anime.coverImage.color}
+          sizes="(max-width: 640px) 33vw, 180px"
           className="w-full h-full object-cover group-hover:scale-110 group-focus-visible:scale-110 transition-transform duration-500"
-          loading="lazy"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-300" />
         {eps && (

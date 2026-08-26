@@ -44,9 +44,14 @@ next-env.d.ts
 data/auth.json
 data/user_*.json
 data/avatars/
+data/aniworld-cache.json
 
 # generated config
 next.config.js
 postcss.config.js
 tailwind.config.js
 aniweb/
+
+# stray/scratch files
+scratch_look*.mjs
+*:Zone.Identifier

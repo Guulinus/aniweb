@@ -73,11 +73,11 @@ export async function GET(
   try {
     const links = await Promise.race([
       getEpisodeStreamLinks(slug, season, episode),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Episode fetch timed out')), 20000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Episode fetch timed out')), 35000)),
     ]);
 
     // Extract direct video URLs with timeout for each hoster
-    const extractionTimeout = 8000; // 8 seconds per hoster
+    const extractionTimeout = 12000; // 12 seconds per hoster
 
     const resolvedLinks = await Promise.all(
       links.map(async (link) => {

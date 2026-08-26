@@ -27,8 +27,8 @@ function SectionHeader({ title, href, lang }: { title: string; href?: string; la
 export default function HomePage() {
   const { language } = useLanguage();
   const heroText = language === 'de'
-    ? { main: 'Jeder Anime hier kostenlos', sub: 'Deutsche Synchronisation & japanische Originalversion' }
-    : { main: 'Every anime here for free', sub: 'German Dub & Japanese Original' };
+    ? { main: 'Jeder Anime hier kostenlos', sub: 'Deutsche Synchronisation & japanische Originalversion — ohne Werbung, ohne Kosten.' }
+    : { main: 'Every anime here for free', sub: 'German dub & Japanese original — no ads, no cost.' };
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 lg:px-8 pb-8">
@@ -43,11 +43,7 @@ export default function HomePage() {
           <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#0a0a0f] to-transparent" />
 
           <div className="relative h-full flex flex-col items-start justify-end pb-12 px-8 md:px-16 z-10 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-theme-soft border-theme-soft text-theme-primary text-xs font-medium mb-4">
-              <span className="w-1.5 h-1.5 bg-theme-primary rounded-full animate-pulse" />
-              {language === 'de' ? 'Kostenlos streamen' : 'Free streaming'}
-            </div>
-            <h1 className="text-4xl md:text-6xl font-bold text-white mb-3 leading-tight">
+            <h1 className="text-4xl md:text-6xl font-bold text-white mb-3 leading-tight tracking-tight">
               {heroText.main}
             </h1>
             <p className="text-base md:text-lg text-gray-300 mb-8">
@@ -78,36 +74,7 @@ export default function HomePage() {
       <NewReleasesSection />
       <RecommendationsSection />
       <GenreRowsSection />
-      <SkeletonSection />
     </div>
-  );
-}
-
-function SkeletonSection() {
-  const { language } = useLanguage();
-  const [show, setShow] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setShow(false), 8000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (!show) return null;
-
-  return (
-    <section className="mb-14">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-1 h-6 bg-gray-700 rounded-full" />
-        <div className="h-7 w-48 bg-gray-800 rounded animate-pulse" />
-      </div>
-      <div className="flex gap-3 overflow-hidden py-2">
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="flex-shrink-0 w-[180px]">
-            <div className="aspect-[3/4] bg-gray-800 rounded-lg animate-pulse" />
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -116,6 +83,7 @@ function ResumeWatchingSection() {
   const { entries } = useWatchlist();
   const [animeData, setAnimeData] = useState<Map<number, AnimeBasic>>(new Map());
   const [positions, setPositions] = useState<Map<string, {time: number; duration: number}>>(new Map());
+  const [seasonPosters, setSeasonPosters] = useState<Map<number, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const title = language === 'de' ? 'Weiterschauen' : 'Continue Watching';
 
@@ -165,6 +133,25 @@ function ResumeWatchingSection() {
       }));
       setAnimeData(map);
       setLoading(false);
+
+      // The card cover should reflect the season the user is actually on (not always
+      // season 1's cover) — season 1 already matches the AniList cover, so only fetch a
+      // TMDB season poster for entries progressed into a later season.
+      const posterMap = new Map<number, string>();
+      await Promise.all(watchingEntries.map(async (entry) => {
+        const season = entry.currentSeason ?? 1;
+        if (season <= 1) return;
+        const anime = map.get(entry.animeId);
+        const romaji = anime?.title.romaji ?? entry.title;
+        const english = anime?.title.english;
+        if (!romaji) return;
+        try {
+          const res = await fetch(`/api/tmdb/season-poster?romaji=${encodeURIComponent(romaji)}${english ? `&english=${encodeURIComponent(english)}` : ''}&season=${season}`);
+          const data = await res.json();
+          if (data.poster) posterMap.set(entry.animeId, data.poster);
+        } catch {}
+      }));
+      if (posterMap.size > 0) setSeasonPosters(posterMap);
     };
     fetchAnimeData();
   }, [watchingEntries.length]);
@@ -217,9 +204,9 @@ function ResumeWatchingSection() {
               href={`/watch/${entry.animeSlug}/${seasonToWatch}/${episodeToWatch}?id=${entry.animeId}${entry.aniworldSlug ? `&awSlug=${entry.aniworldSlug}` : ''}`}
               className="group block"
             >
-              <div className="relative overflow-hidden rounded-xl bg-gray-800 aspect-[3/4] ring-1 ring-white/[0.04]">
+              <div className="relative overflow-hidden rounded-xl bg-gray-800 aspect-[3/4] ring-1 ring-white/[0.04] transition-all duration-300 group-hover:-translate-y-1 group-focus-visible:-translate-y-1 group-hover:shadow-[0_18px_38px_-12px_var(--color-primary-shadow)] group-focus-visible:shadow-[0_18px_38px_-12px_var(--color-primary-shadow)]">
                 <img
-                  src={anime?.coverImage?.large || entry.coverImage || anime?.coverImage?.medium}
+                  src={seasonPosters.get(entry.animeId) || anime?.coverImage?.large || entry.coverImage || anime?.coverImage?.medium}
                   alt={anime?.title?.english ?? anime?.title?.romaji}
                   className="w-full h-full object-cover group-hover:scale-105 group-focus-visible:scale-105 transition-transform duration-500"
                   loading="lazy"

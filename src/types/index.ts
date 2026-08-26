@@ -9,6 +9,7 @@ export interface AnimeBasic {
   coverImage: {
     large: string;
     medium: string;
+    color?: string | null;
   };
   bannerImage?: string | null;
   format: string;

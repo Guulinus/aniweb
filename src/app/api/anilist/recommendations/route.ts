@@ -10,8 +10,9 @@ const query = `
           mediaRecommendation {
             id
             idMal
+            isAdult
             title { romaji english native }
-            coverImage { extraLarge large medium }
+            coverImage { extraLarge large medium color }
             bannerImage
             format
             status
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
     const nodes = data.data?.Media?.recommendations?.nodes ?? [];
     const results = nodes
       .map((n: any) => n.mediaRecommendation)
-      .filter(Boolean)
+      .filter((m: any) => m && !m.isAdult)
       .map((m: any) => ({
         id: m.id,
         idMal: m.idMal ?? null,
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest) {
         coverImage: {
           large: m.coverImage?.extraLarge ?? m.coverImage?.large ?? '',
           medium: m.coverImage?.large ?? m.coverImage?.medium ?? '',
+          color: m.coverImage?.color ?? null,
         },
         bannerImage: m.bannerImage ?? null,
         format: m.format ?? 'UNKNOWN',

@@ -23,9 +23,11 @@ interface VideoPlayerProps {
   onComplete?: () => void;
   skipData?: SkipTime | null;
   nextEpisodeUrl?: string;
+  coverImage?: string;
+  episodeThumbnail?: string;
 }
 
-export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episodeNum, seekTo: initialSeekTo, onComplete, skipData, nextEpisodeUrl }: VideoPlayerProps) {
+export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episodeNum, seekTo: initialSeekTo, onComplete, skipData, nextEpisodeUrl, coverImage, episodeThumbnail }: VideoPlayerProps) {
   const { language } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Artplayer | null>(null);
@@ -50,6 +52,8 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
   const isHlsUrl = (url: string) => url.includes('.m3u8') || url.includes('m3u8');
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const animeIdRef = useRef<number | undefined>(animeId);
+  const coverImageRef = useRef<string | undefined>(coverImage);
+  const episodeThumbnailRef = useRef<string | undefined>(episodeThumbnail);
   const linksRef = useRef<StreamLink[]>(links);
   const selectedServerRef = useRef(selectedServer);
   const positionRef = useRef<{time: number; duration: number}>({time: 0, duration: 0});
@@ -57,6 +61,14 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
   useEffect(() => {
     animeIdRef.current = animeId;
   }, [animeId]);
+
+  useEffect(() => {
+    coverImageRef.current = coverImage;
+  }, [coverImage]);
+
+  useEffect(() => {
+    episodeThumbnailRef.current = episodeThumbnail;
+  }, [episodeThumbnail]);
 
   useEffect(() => {
     linksRef.current = links;
@@ -147,7 +159,8 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
         animeSlug: slug,
         title: episodeTitle.split(' - ')[0] || episodeTitle,
         episodeTitle: episodeTitle,
-        coverImage: '',
+        coverImage: coverImageRef.current || '',
+        thumbnail: episodeThumbnailRef.current || '',
         season,
         episode,
         hoster: currentLink?.hoster || '',
@@ -160,8 +173,13 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
       if (existing) {
         try { history = JSON.parse(existing); } catch {}
       }
-      
-      const newHistory = [historyEntry, ...history.filter((h: any) => 
+
+      const priorMatch = history.find((h: any) =>
+        h.animeId === historyEntry.animeId && h.season === historyEntry.season && h.episode === historyEntry.episode
+      );
+      if (!historyEntry.thumbnail && priorMatch?.thumbnail) historyEntry.thumbnail = priorMatch.thumbnail;
+
+      const newHistory = [historyEntry, ...history.filter((h: any) =>
         !(h.animeId === historyEntry.animeId && h.season === historyEntry.season && h.episode === historyEntry.episode)
       ).slice(0, 50)];
       
