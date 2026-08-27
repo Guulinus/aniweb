@@ -18,9 +18,12 @@ export default function CalendarPage() {
   const [calendar, setCalendar] = useState<Map<string, CalendarEntry[]>>(new Map());
   const [loading, setLoading] = useState(true);
 
-  const days = language === 'de' 
+  // Labels are just for display — the calendar data is keyed by day index (0 = Sunday, from
+  // Date#getDay), not by name, so it doesn't matter which language the API resolved on.
+  const dayLabels = language === 'de'
     ? ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
     : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const days = dayLabels.map((label, index) => ({ index, label }));
 
   useEffect(() => {
     fetch('/api/anilist/calendar')
@@ -61,13 +64,13 @@ export default function CalendarPage() {
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {days.map(day => {
-          const animeList = calendar.get(day) || [];
+        {days.map(({ index, label }) => {
+          const animeList = calendar.get(String(index)) || [];
           if (animeList.length === 0) return null;
 
           return (
-            <div key={day} className="bg-gray-800/50 rounded-lg p-4">
-              <h2 className="text-lg font-bold text-white mb-3">{day}</h2>
+            <div key={index} className="bg-gray-800/50 rounded-lg p-4">
+              <h2 className="text-lg font-bold text-white mb-3">{label}</h2>
               <div className="space-y-3">
                 {animeList.map(anime => {
                   const title = anime.title.english ?? anime.title.romaji;

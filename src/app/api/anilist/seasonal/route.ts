@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { resolveHqPosters } from '@/lib/tmdb-client';
 
 const ANILIST_API = 'https://graphql.anilist.co';
 
@@ -53,6 +54,11 @@ export async function GET() {
       year: m.startDate?.year ?? null,
       genres: m.genres ?? [],
     }));
+
+    const hqPosters = await resolveHqPosters(
+      media.map((m: any) => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format }))
+    );
+    results.forEach((r: any, i: number) => { if (hqPosters[i]) r.coverImage.large = hqPosters[i]; });
 
     return NextResponse.json({ results, season, year }, {
       headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400' },

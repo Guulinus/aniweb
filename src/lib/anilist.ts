@@ -1,4 +1,5 @@
 import type { AnimeBasic, AnimeDetail, SearchResponse, BrowseResponse } from '@/types';
+import { resolveHqPoster, resolveHqPosters } from './tmdb-client';
 
 const ANILIST_API = 'https://graphql.anilist.co';
 
@@ -57,6 +58,19 @@ function mapMediaToBasic(media: any): AnimeBasic {
   };
 }
 
+// Resolves the higher-resolution, textless TMDB poster for a page of results in one batch —
+// used for the live AniList list endpoints so results still ship with the good poster already
+// in place (no swap after the fact), the same way the DB-backed hot paths get it for free from
+// the background sync, and `getAnimeById` gets it for its single item (see there).
+async function withHqPosters(mediaList: any[]): Promise<AnimeBasic[]> {
+  const basics = mediaList.map(mapMediaToBasic);
+  const hqPosters = await resolveHqPosters(
+    mediaList.map(m => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format }))
+  );
+  basics.forEach((b, i) => { if (hqPosters[i]) b.coverImage.large = hqPosters[i] as string; });
+  return basics;
+}
+
 export async function getTrendingAnime(page = 1, perPage = 20): Promise<BrowseResponse> {
   const query = `
     query ($page: Int, $perPage: Int) {
@@ -77,7 +91,7 @@ export async function getTrendingAnime(page = 1, perPage = 20): Promise<BrowseRe
   const pageData = data.Page;
 
   return {
-    results: pageData.media.map(mapMediaToBasic),
+    results: await withHqPosters(pageData.media),
     hasNextPage: pageData.pageInfo.hasNextPage,
     pageInfo: pageData.pageInfo,
   };
@@ -103,7 +117,7 @@ export async function getPopularAnime(page = 1, perPage = 20): Promise<BrowseRes
   const pageData = data.Page;
 
   return {
-    results: pageData.media.map(mapMediaToBasic),
+    results: await withHqPosters(pageData.media),
     hasNextPage: pageData.pageInfo.hasNextPage,
     pageInfo: pageData.pageInfo,
   };
@@ -128,7 +142,7 @@ export async function searchAnime(queryStr: string, page = 1, perPage = 20, sort
   const data = await anilistQuery<any>(query, { search: queryStr, page, perPage, sort: [sort] });
 
   return {
-    results: data.Page.media.map(mapMediaToBasic),
+    results: await withHqPosters(data.Page.media),
     hasNextPage: data.Page.pageInfo.hasNextPage,
   };
 }
@@ -158,6 +172,23 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
   if (!media) {
     throw new Error(`Anime with ID ${id} not found`);
   }
+
+  // Resolved here (not just on the detail page) so every consumer of this single function —
+  // the detail page itself, watchlist/history/recommendation cards that look an anime up by
+  // id, related-movie tiles — gets the same high-res, textless poster with no extra round
+  // trip and no low-then-high swap. Written into `coverImage.extraLarge` rather than `.large`
+  // so it flows through the existing `extraLarge ?? large` preference used everywhere.
+  const movieNodes = (media.relations?.edges ?? [])
+    .map((e: any) => e.node)
+    .filter((n: any) => n?.format === 'MOVIE');
+
+  const [mainHqPoster, relationHqPosters] = await Promise.all([
+    resolveHqPoster({ romaji: media.title?.romaji ?? '', english: media.title?.english, format: media.format }),
+    resolveHqPosters(movieNodes.map((n: any) => ({ romaji: n.title?.romaji ?? '', english: n.title?.english, format: n.format }))),
+  ]);
+
+  if (mainHqPoster) media.coverImage.extraLarge = mainHqPoster;
+  movieNodes.forEach((n: any, i: number) => { if (relationHqPosters[i]) n.coverImage.extraLarge = relationHqPosters[i]; });
 
   return {
     ...mapMediaToBasic(media),
@@ -228,7 +259,7 @@ export async function browseAnime(options: {
   const pageData = data.Page;
 
   return {
-    results: pageData.media.map(mapMediaToBasic),
+    results: await withHqPosters(pageData.media),
     hasNextPage: pageData.pageInfo.hasNextPage,
     pageInfo: pageData.pageInfo,
   };
@@ -258,6 +289,7 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
             title { romaji english }
             coverImage { extraLarge large medium color }
             episodes
+            format
           }
         }
       }
@@ -270,8 +302,10 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
   const data = await anilistQuery<any>(query, { start: now, end: weekLater });
   const schedules = data.Page?.airingSchedules ?? [];
 
+  // Keyed by day index (0 = Sunday, per Date#getDay), not an English day name — the calendar
+  // page looks this up under German day labels by default, and a hardcoded English name never
+  // matched those, silently leaving every day empty regardless of what the schedule contained.
   const calendar = new Map<string, CalendarEntry[]>();
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   const mediaMap = new Map<number, CalendarEntry>();
 
@@ -281,7 +315,7 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
 
     const airingDate = new Date(schedule.airingAt * 1000);
     const dayIndex = airingDate.getDay();
-    const dayName = days[dayIndex];
+    const dayName = String(dayIndex);
 
     if (!mediaMap.has(anime.id)) {
       mediaMap.set(anime.id, {
@@ -305,6 +339,18 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
     }
     calendar.get(dayName)!.push(mediaMap.get(anime.id)!);
   });
+
+  const entries = Array.from(mediaMap.values());
+  const rawMedia = schedules
+    .filter((s: any) => mediaMap.has(s.media?.id))
+    .reduce((acc: Map<number, any>, s: any) => (acc.has(s.media.id) ? acc : acc.set(s.media.id, s.media)), new Map<number, any>());
+  const hqPosters = await resolveHqPosters(
+    entries.map(e => {
+      const raw = rawMedia.get(e.id);
+      return { romaji: raw?.title?.romaji ?? e.title.romaji, english: raw?.title?.english ?? e.title.english, format: raw?.format };
+    })
+  );
+  entries.forEach((e, i) => { if (hqPosters[i]) e.coverImage.large = hqPosters[i] as string; });
 
   return calendar;
 }

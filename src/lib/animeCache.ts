@@ -28,6 +28,7 @@ export interface AnimeRow {
   genres: string;
   description: string | null;
   episode_thumbnails: string | null;
+  tmdb_poster: string | null;
   updated_at: number;
 }
 

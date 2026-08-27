@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { setCacheData, setLastSyncTime } from './animeCache';
+import { resolveHqPosters } from './tmdb-client';
 
 const DB_PATH = path.join(process.cwd(), 'data/anime.db');
 
@@ -63,6 +64,13 @@ function ensureTables(db: Database.Database) {
   } catch {
     // Column already exists.
   }
+
+  // Migration for databases created before the TMDB high-res poster cache existed.
+  try {
+    db.exec('ALTER TABLE anime ADD COLUMN tmdb_poster TEXT');
+  } catch {
+    // Column already exists.
+  }
 }
 
 async function syncPopularAnime(db: Database.Database) {
@@ -99,15 +107,22 @@ async function syncPopularAnime(db: Database.Database) {
 
     if (!media) break;
 
+    // Resolved once here (background sync, runs every 12h) rather than per page-request —
+    // this is what lets the popular/trending pages serve the high-res, textless TMDB poster
+    // instantly with no per-request TMDB round trip and no low-then-high swap.
+    const hqPosters = await resolveHqPosters(
+      media.map(m => ({ romaji: m.title.romaji, english: m.title.english, format: m.format }))
+    );
+
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO anime (
         id, title_romaji, title_english, title_native, cover_image, cover_color, banner_image,
         format, status, episodes, average_score, year, genres, description,
-        episode_thumbnails, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        episode_thumbnails, tmdb_poster, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    for (const m of media) {
+    media.forEach((m, i) => {
       const episodeThumbs: Record<number, string> = {};
       if (m.streamingEpisodes) {
         m.streamingEpisodes.forEach((ep, idx) => {
@@ -116,7 +131,7 @@ async function syncPopularAnime(db: Database.Database) {
           }
         });
       }
-      
+
       stmt.run(
         m.id,
         m.title.romaji,
@@ -133,10 +148,11 @@ async function syncPopularAnime(db: Database.Database) {
         JSON.stringify(m.genres ?? []),
         m.description ?? null,
         Object.keys(episodeThumbs).length > 0 ? JSON.stringify(episodeThumbs) : null,
+        hqPosters[i] ?? null,
         Math.floor(Date.now() / 1000)
       );
       totalSynced++;
-    }
+    });
 
     if (!data.data?.Page?.pageInfo?.hasNextPage) break;
     page++;

@@ -233,6 +233,84 @@ export async function getTmdbPoster(tmdbId: number, type: 'tv' | 'movie' = 'tv')
   }
 }
 
+async function searchTmdbMovieIdStrict(romaji: string, english?: string | null): Promise<number | null> {
+  const candidates = [english, romaji].filter(Boolean) as string[];
+  for (const title of candidates) {
+    try {
+      const res = await fetch(`${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`);
+      const data = await res.json();
+      const results = data.results ?? [];
+      const validated = results.slice(0, 5).find((r: any) => tmdbResultLikelyMatches(r, candidates));
+      if (validated) return validated.id;
+    } catch {}
+  }
+  return null;
+}
+
+// Resolving + validating a poster costs 2-3 TMDB requests, so results are cached in-process —
+// this gets reused heavily across users hitting the same popular/trending/browse rows.
+const hqPosterCache = new Map<string, { url: string | null; expiresAt: number }>();
+const HQ_POSTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const HQ_POSTER_TIMEOUT_MS = 3000;
+
+export interface HqPosterCandidate {
+  romaji: string;
+  english?: string | null;
+  format?: string | null;
+}
+
+// The one entry point every cover-image call site should go through for the "high quality,
+// no printed title, load it directly (not a low-then-high swap)" poster. Bounded by a timeout
+// so a slow/rate-limited TMDB can't stall the page — callers fall back to AniList's own cover
+// when this resolves to null (timeout, no confident match, or no textless art available).
+export async function resolveHqPoster(candidate: HqPosterCandidate): Promise<string | null> {
+  const cacheKey = `${candidate.format ?? 'TV'}:${candidate.english || candidate.romaji}`;
+  const cached = hqPosterCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.url;
+
+  const run = async (): Promise<string | null> => {
+    if (candidate.format === 'MOVIE') {
+      const id = await searchTmdbMovieIdStrict(candidate.romaji, candidate.english);
+      return id ? getTmdbPoster(id, 'movie') : null;
+    }
+    const id = await searchTmdbIdStrict(candidate.romaji, candidate.english);
+    return id ? getTmdbPoster(id, 'tv') : null;
+  };
+
+  let result: string | null = null;
+  try {
+    result = await Promise.race([
+      run(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), HQ_POSTER_TIMEOUT_MS)),
+    ]);
+  } catch {
+    result = null;
+  }
+
+  hqPosterCache.set(cacheKey, { url: result, expiresAt: Date.now() + HQ_POSTER_CACHE_TTL_MS });
+  return result;
+}
+
+// Bulk variant for list pages (browse/popular/trending/search/calendar/seasonal) — resolves
+// with bounded concurrency so a 20-50 item page doesn't fire that many requests at once, and
+// caps the whole batch so one slow lookup can't hold up the rest of an already-slow page.
+export async function resolveHqPosters(candidates: HqPosterCandidate[], concurrency = 6): Promise<(string | null)[]> {
+  const results: (string | null)[] = new Array(candidates.length).fill(null);
+  let idx = 0;
+  async function worker() {
+    while (idx < candidates.length) {
+      const i = idx++;
+      try {
+        results[i] = await resolveHqPoster(candidates[i]);
+      } catch {
+        results[i] = null;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, candidates.length) }, worker));
+  return results;
+}
+
 export interface TmdbSeasonName {
   seasonNumber: number;
   name: string;

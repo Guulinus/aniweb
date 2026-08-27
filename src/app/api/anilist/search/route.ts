@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
             id: a.id,
             idMal: null,
             title: { romaji: a.title_romaji, english: a.title_english, native: a.title_native },
-            coverImage: { large: a.cover_image, medium: a.cover_image, color: a.cover_color ?? null },
+            coverImage: { large: a.tmdb_poster || a.cover_image, medium: a.cover_image, color: a.cover_color ?? null },
             bannerImage: a.banner_image,
             format: a.format,
             status: a.status,
