@@ -31,6 +31,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
   const [arcSeason, setArcSeason] = useState<number | null>(null);
   const [arcSeasonResolved, setArcSeasonResolved] = useState(true);
   const [episodeDurations, setEpisodeDurations] = useState<Record<number, number>>({});
+  const [hqPoster, setHqPoster] = useState<string | null>(null);
   const descRef = useRef<HTMLDivElement>(null);
 
   const { add, remove, isInWatchlist, getEntry } = useWatchlist();
@@ -79,6 +80,20 @@ function AnimeDetailContent({ slug }: { slug: string }) {
       })
       .catch(() => setLoading(false));
   }, [animeId]);
+
+  // AniList's own cover art tops out around 460x690 — TMDB has real high-res posters, but
+  // only worth the (validated, so no wrong-artwork risk) lookup for this one hero image.
+  useEffect(() => {
+    if (!anime) { setHqPoster(null); return; }
+    let cancelled = false;
+    const params = new URLSearchParams({ romaji: anime.title.romaji, format: anime.format });
+    if (anime.title.english) params.set('english', anime.title.english);
+    fetch(`/api/tmdb/poster?${params}`)
+      .then(r => r.json())
+      .then((data: { poster?: string | null }) => { if (!cancelled) setHqPoster(data.poster ?? null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [anime?.id]);
 
   useEffect(() => {
     if (!anime) return;
@@ -381,7 +396,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
           <div className="flex-shrink-0 w-48 md:w-56">
             <div className="relative overflow-hidden rounded-xl shadow-2xl shadow-black/50">
               <img
-                src={anime.coverImage.large || anime.coverImage.medium}
+                src={hqPoster || anime.coverImage.large || anime.coverImage.medium}
                 alt={title}
                 className="w-full aspect-[3/4] object-cover"
                 loading="eager"

@@ -3,6 +3,38 @@ const TMDB_API_KEY = '7a6f6473c46188721c31804f166eb53d';
 // w780 for posters/banners (large display size), w500 for small episode stills.
 const TMDB_IMG_POSTER = 'https://image.tmdb.org/t/p/w780';
 const TMDB_IMG_STILL = 'https://image.tmdb.org/t/p/w500';
+// Full-resolution poster (~2000px), only for the one hero image per anime detail page where
+// it's worth the extra bytes — everything else keeps the smaller, faster w780/w500 tiers.
+const TMDB_IMG_POSTER_XL = 'https://image.tmdb.org/t/p/original';
+
+function normalizeTmdbTitle(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// `searchTmdbId` used to accept whatever TMDB's search returned first, with no check that it
+// was actually the right show — the same class of bug that made AniList/TMDB posters "wrong
+// artwork" on the homepage before it got reverted. Require real title overlap before accepting.
+function tmdbResultLikelyMatches(result: { name?: string; original_name?: string; title?: string; original_title?: string }, candidates: string[]): boolean {
+  const resultTitles = [result.name, result.original_name, result.title, result.original_title]
+    .filter(Boolean)
+    .map(t => normalizeTmdbTitle(t as string));
+  // Multi-cour franchises are titled per-arc on AniList ("JoJo's Bizarre Adventure: Stardust
+  // Crusaders") but TMDB only has the umbrella show ("JoJo's Bizarre Adventure") — so also
+  // accept a match on just the part before the ":"/"-" separator, not only the full title.
+  const withBaseTitles = candidates.flatMap(c => {
+    const base = c.split(/[:\-]/)[0].trim();
+    return base && base !== c ? [c, base] : [c];
+  });
+  return withBaseTitles.some(c => {
+    const nc = normalizeTmdbTitle(c);
+    if (!nc || nc.length < 3) return false;
+    return resultTitles.some(rt => rt === nc || rt.includes(nc) || nc.includes(rt));
+  });
+}
 
 export interface TmdbMovie {
   title: string;
@@ -138,12 +170,55 @@ export async function searchTmdbId(romaji: string, english?: string | null): Pro
         `${TMDB_BASE}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`
       );
       const data = await res.json();
-      if (data.results?.length > 0) {
-        return data.results[0].id;
-      }
+      const results = data.results ?? [];
+      if (results.length === 0) continue;
+      // Prefer a validated match over blindly taking the top hit, but still fall back to it
+      // if nothing else in the top few looks right — better than returning nothing at all,
+      // since this only feeds episode-thumbnail matching (low-stakes) by default.
+      const validated = results.slice(0, 5).find((r: any) => tmdbResultLikelyMatches(r, candidates));
+      if (validated) return validated.id;
+      if (results.length === 1 || candidates.indexOf(title) === candidates.length - 1) return results[0].id;
     } catch {}
   }
   return null;
+}
+
+// Stricter variant for the one place a wrong match is highly visible (the detail-page hero
+// poster) — returns null instead of guessing when nothing actually looks like the right show.
+export async function searchTmdbIdStrict(romaji: string, english?: string | null): Promise<number | null> {
+  const clean = (t: string) => t.replace(/\s*\((?:TV|OVA|ONA|Movie|Special)\)\s*$/i, '').trim();
+  const titles = [english, romaji].filter(Boolean) as string[];
+  const candidates = Array.from(new Set([...titles, ...titles.map(clean)]));
+
+  for (const title of candidates) {
+    try {
+      const res = await fetch(
+        `${TMDB_BASE}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`
+      );
+      const data = await res.json();
+      const results = data.results ?? [];
+      const validated = results.slice(0, 5).find((r: any) => tmdbResultLikelyMatches(r, candidates));
+      if (validated) return validated.id;
+    } catch {}
+  }
+  return null;
+}
+
+export async function getTmdbPoster(tmdbId: number, type: 'tv' | 'movie' = 'tv'): Promise<string | null> {
+  try {
+    const res = await fetch(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&language=de-DE`);
+    const data = await res.json();
+    if (data.poster_path) return `${TMDB_IMG_POSTER_XL}${data.poster_path}`;
+    if (!data.poster_path) {
+      // Some entries only have a poster under the original-language listing.
+      const fallbackRes = await fetch(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}`);
+      const fallback = await fallbackRes.json();
+      if (fallback.poster_path) return `${TMDB_IMG_POSTER_XL}${fallback.poster_path}`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export interface TmdbSeasonName {

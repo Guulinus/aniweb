@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "ai-color-palette",
+        "value": "*",
+        "files": [
+          "src/components/Navbar.tsx"
+        ],
+        "createdAt": "2026-08-27T15:51:54.732Z",
+        "reason": "Pre-existing site brand identity: purple/violet (#a855f7) is AniRoll's documented default theme (AGENTS.md THEME_PRESETS.aniroll), used site-wide, not introduced this session"
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "src/components/Navbar.tsx"
+        ],
+        "createdAt": "2026-08-27T15:55:51.145Z",
+        "reason": "Pre-existing AniRoll logo wordmark (gradient text), part of the site's established brand identity, not introduced this session"
+      }
+    ]
+  }
+}
