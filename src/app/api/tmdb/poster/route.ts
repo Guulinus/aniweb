@@ -3,7 +3,6 @@ import { searchTmdbIdStrict, getTmdbPoster } from '@/lib/tmdb-client';
 
 const TMDB_API_KEY = '7a6f6473c46188721c31804f166eb53d';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
-const TMDB_IMG_POSTER_XL = 'https://image.tmdb.org/t/p/original';
 
 function normalize(s: string): string {
   return s
@@ -40,8 +39,9 @@ export async function GET(request: NextRequest) {
         const res = await fetch(`${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`);
         const data = await res.json();
         const match = (data.results ?? []).slice(0, 5).find((m: any) => looksLikeMatch(m, candidates));
-        if (match?.poster_path) {
-          return NextResponse.json({ poster: `${TMDB_IMG_POSTER_XL}${match.poster_path}` });
+        if (match) {
+          const poster = await getTmdbPoster(match.id, 'movie');
+          return NextResponse.json({ poster });
         }
       }
       return NextResponse.json({ poster: null });

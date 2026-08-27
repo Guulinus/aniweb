@@ -204,18 +204,30 @@ export async function searchTmdbIdStrict(romaji: string, english?: string | null
   return null;
 }
 
+interface TmdbImageEntry {
+  file_path: string;
+  iso_639_1: string | null;
+  vote_average?: number;
+  width?: number;
+  height?: number;
+}
+
 export async function getTmdbPoster(tmdbId: number, type: 'tv' | 'movie' = 'tv'): Promise<string | null> {
   try {
-    const res = await fetch(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&language=de-DE`);
+    const res = await fetch(`${TMDB_BASE}/${type}/${tmdbId}/images?api_key=${TMDB_API_KEY}`);
     const data = await res.json();
-    if (data.poster_path) return `${TMDB_IMG_POSTER_XL}${data.poster_path}`;
-    if (!data.poster_path) {
-      // Some entries only have a poster under the original-language listing.
-      const fallbackRes = await fetch(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}`);
-      const fallback = await fallbackRes.json();
-      if (fallback.poster_path) return `${TMDB_IMG_POSTER_XL}${fallback.poster_path}`;
-    }
-    return null;
+    const posters = (data.posters ?? []) as TmdbImageEntry[];
+    if (posters.length === 0) return null;
+
+    // TMDB posters usually carry a baked-in title logo in whatever language they're tagged
+    // with — `iso_639_1: null` is TMDB's convention for the textless/art-only variant, which
+    // is what we actually want here (matches AniList's plain-art cover style, no printed title).
+    const portrait = (p: TmdbImageEntry) => !p.width || !p.height || p.height / p.width >= 1.2;
+    const textless = posters.filter(p => p.iso_639_1 === null && portrait(p));
+    const pool = textless.length > 0 ? textless : posters.filter(portrait);
+    const best = [...pool].sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))[0];
+
+    return best?.file_path ? `${TMDB_IMG_POSTER_XL}${best.file_path}` : null;
   } catch {
     return null;
   }
