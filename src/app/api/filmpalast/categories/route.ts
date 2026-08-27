@@ -1,27 +1,70 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
+import { getHorrorSlugs, matchCuratedMovies } from '@/lib/filmpalast-client';
+import { getTmdbPopularMovies } from '@/lib/tmdb-client';
 
 const FP_BASE = 'https://filmpalast.to';
+const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
 
 const CATEGORY_URLS: Record<string, string> = {
   trending: '/',
   new: '/',
   action: '/search/genre/Action',
   comedy: '/search/genre/Komödie',
+  family: '/search/genre/Familie',
+  adventure: '/search/genre/Abenteuer',
+  scifi: '/search/genre/Sci-Fi',
+  drama: '/search/genre/Drama',
 };
+
+function absolutize(src: string): string {
+  if (!src) return src;
+  if (src.startsWith('//')) return `https:${src}`;
+  if (src.startsWith('/')) return `${FP_BASE}${src}`;
+  return src;
+}
+
+function extractSlug(href: string): string {
+  const raw = href.replace(/^https?:\/\//, '').replace(/^\/+/, '').replace(/^filmpalast\.to\/?/, '');
+  return raw.split('/').filter(Boolean).filter((p, i) => !(i === 0 && p === 'stream')).join('/');
+}
+
+// "Beliebt" is expensive to build (a filmpalast search per TMDB candidate), so it's cached
+// longer than the plain scrape categories below.
+let popularCache: { movies: Array<{ title: string; slug: string; posterImage: string; year: number | null }>; fetchedAt: number } | null = null;
+const POPULAR_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+async function getPopularMovies() {
+  if (popularCache && Date.now() - popularCache.fetchedAt < POPULAR_CACHE_TTL_MS) {
+    return popularCache.movies;
+  }
+  const candidates = await getTmdbPopularMovies(2);
+  const movies = await matchCuratedMovies(candidates, 20);
+  popularCache = { movies, fetchedAt: Date.now() };
+  return movies;
+}
 
 export async function GET(request: NextRequest) {
   const category = request.nextUrl.searchParams.get('category') || 'trending';
-  const url = CATEGORY_URLS[category];
+
+  if (category === 'popular') {
+    const movies = await getPopularMovies();
+    return NextResponse.json({ movies }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=21600' } });
+  }
+
+  // Any genre not in the curated map is treated as a literal filmpalast genre name, so the
+  // browse page can filter by genre — except Horror, which stays off-limits everywhere it's
+  // reached through this category param (the dedicated cross-reference filter below still
+  // covers trending/new).
+  const url = CATEGORY_URLS[category]
+    ?? (category.toLowerCase() !== 'horror' ? `/search/genre/${encodeURIComponent(category)}` : null);
 
   if (!url) {
     return NextResponse.json({ movies: [] });
   }
 
   try {
-    const res = await fetch(`${FP_BASE}${url}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-    });
+    const res = await fetch(`${FP_BASE}${url}`, { headers: HEADERS });
     const html = await res.text();
     const $ = cheerio.load(html);
 
@@ -37,11 +80,10 @@ export async function GET(request: NextRequest) {
       const titleMatch = title.match(/\bS\d{1,3}E\d{1,3}\b/i) || title.match(/\bStaffel\s*\d+\b/i);
       if (titleMatch) return;
 
-      const raw = href.replace(/^https?:\/\//, '').replace(/^\/+/, '').replace(/^filmpalast\.to/, '');
-      const slug = raw.split('/').filter(Boolean).filter((p, i) => !(i === 0 && p === 'stream')).join('/');
+      const slug = extractSlug(href);
       if (!slug) return;
 
-      const posterImage = $el.find('img').attr('src') || $el.find('img').attr('data-src') || '';
+      const posterImage = absolutize($el.find('img').attr('src') || $el.find('img').attr('data-src') || '');
       const yearMatch = title.match(/\((\d{4})\)/);
       const year = yearMatch ? parseInt(yearMatch[1]) : null;
 
@@ -55,7 +97,14 @@ export async function GET(request: NextRequest) {
       movies.push({ title: title.replace(/\s*\(\d{4}\)$/, ''), slug, posterImage, year });
     });
 
-    return NextResponse.json({ movies: movies.slice(0, 20) }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=7200' } });
+    // Cross-reference every category (not just trending/new) against Horror — filmpalast
+    // tags movies with multiple genres, so a title can surface on e.g. the Sci-Fi genre page
+    // while also being filed under Horror. The horror-slug cache only covers its first page,
+    // so also catch anything self-labeled "Horror" in the title as a cheap backstop.
+    const horrorSlugs = await getHorrorSlugs();
+    const filtered = movies.filter(m => !horrorSlugs.has(m.slug) && !/\bhorror\b/i.test(m.title));
+
+    return NextResponse.json({ movies: filtered.slice(0, 20) }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=7200' } });
   } catch {
     return NextResponse.json({ movies: [] });
   }

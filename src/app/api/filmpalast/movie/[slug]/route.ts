@@ -29,6 +29,7 @@ export async function GET(
       genres: filmpalast?.genres || [],
       year: filmpalast?.year || null,
       rating: filmpalast?.rating || null,
+      runtimeMinutes: filmpalast?.runtimeMinutes || null,
       streamSources: filmpalast?.streamSources || [],
       source: filmpalast ? 'filmpalast' : 'movie2k',
     };

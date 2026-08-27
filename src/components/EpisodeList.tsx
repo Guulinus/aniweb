@@ -19,6 +19,14 @@ interface EpisodeListProps {
 
 const DEFAULT_EPISODE_DURATION = 24 * 60;
 
+function normalizeTitle(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 interface WatchData {
   watched: number[];
   progress: Record<number, number>;
@@ -102,7 +110,28 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
   const sortedSeasons = useMemo(() => [...seasons].sort((a, b) => a.seasonNumber - b.seasonNumber), [seasons]);
 
   const hasAniworldFilms = sortedSeasons.some(s => s.seasonNumber === 0);
-  const hasAniListMovies = movies && movies.length > 0;
+
+  // AniWorld's own "Filme" season is the reliable source for this specific series — the
+  // AniList-relation movies are matched to AniWorld via a fuzzy title search (`find-movie`)
+  // that can occasionally resurface the same film AniWorld already lists natively. Drop those
+  // duplicates so AniWorld's own listing always wins.
+  const aniworldFilmTitles = useMemo(() => {
+    const set = new Set<string>();
+    for (const ep of filmSeason?.episodes ?? []) {
+      if (ep.title) set.add(normalizeTitle(ep.title));
+    }
+    return set;
+  }, [filmSeason]);
+
+  const dedupedMovies = useMemo(() => {
+    if (!movies || movies.length === 0) return movies;
+    return movies.filter((m) => {
+      const title = m.title.english || m.title.romaji;
+      return !aniworldFilmTitles.has(normalizeTitle(title));
+    });
+  }, [movies, aniworldFilmTitles]);
+
+  const hasAniListMovies = dedupedMovies && dedupedMovies.length > 0;
   const showFilmsTab = hasAniworldFilms || hasAniListMovies;
 
   const noDubText = language === 'de' ? 'Keine deutsche Synchronisation verfügbar' : 'No German dub available for this anime';
@@ -186,7 +215,7 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
       {isFilmsTab && showFilmsTab ? (
         <div>
           <p className="text-sm text-gray-500 mb-4">
-            {(filmSeason?.episodes.length ?? 0) + (movies?.length ?? 0)} {language === 'de' ? 'Filme' : 'Movies'}
+            {(filmSeason?.episodes.length ?? 0) + (dedupedMovies?.length ?? 0)} {language === 'de' ? 'Filme' : 'Movies'}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {filmSeason?.episodes.map((ep) => {
@@ -242,7 +271,7 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
                 </Link>
               );
             })}
-            {movies?.map((movie) => {
+            {dedupedMovies?.map((movie) => {
               const title = movie.title.english || movie.title.romaji;
               const cover = movie.coverImage?.large || movie.coverImage?.medium;
               const movieSlug = movieSlugs?.[movie.id];

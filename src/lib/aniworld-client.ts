@@ -285,6 +285,30 @@ export async function findAniworldSeries(title: string, year: number | null, eng
   return { found: false, slug: null, aniworldTitle: null, seasons: [] };
 }
 
+function normalizeMovieTitle(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+// The search terms below are deliberately loosened (last-2/3-words, "+Film"/"+Movie" suffixes)
+// to find movies AniWorld files under an unexpected slug — but that same looseness means a
+// short/generic term can also return a completely unrelated title. Without validating the
+// actual result title against what we searched for, `findAniworldMovie` used to accept
+// whatever AniWorld's search returned first, occasionally attaching the wrong film to an anime.
+function titlesLikelyMatch(candidate: string, target: string): boolean {
+  const c = normalizeMovieTitle(candidate);
+  const t = normalizeMovieTitle(target);
+  if (!c || !t) return false;
+  if (c === t || c.includes(t) || t.includes(c)) return true;
+  const targetWords = t.split(' ').filter(w => w.length > 2);
+  if (targetWords.length === 0) return false;
+  const overlap = targetWords.filter(w => c.includes(w)).length;
+  return overlap / targetWords.length >= 0.6;
+}
+
 export async function findAniworldMovie(title: string, year?: number | null) {
   const searchTerms: string[] = [];
 
@@ -329,6 +353,7 @@ export async function findAniworldMovie(title: string, year?: number | null) {
 
       for (const r of results) {
         if (!r.link || !r.link.includes('/anime/stream/')) continue;
+        if (!r.title || !titlesLikelyMatch(r.title, title)) continue;
         const link = r.link.replace('/anime/stream/', '');
 
         // Sub-page movie: staffel-0/episode-{n}

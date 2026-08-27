@@ -25,10 +25,19 @@ export default function Navbar() {
   }, []);
 
   const navLinks = language === 'de'
-    ? { browse: 'Durchsuchen', seasonal: 'Saisonal', watchlist: 'Merkliste', history: 'Verlauf' }
-    : { browse: 'Browse', seasonal: 'Seasonal', watchlist: 'Watchlist', history: 'History' };
+    ? { browse: 'Durchsuchen', seasonal: 'Saisonal', watchlist: 'Merkliste', history: 'Verlauf', filme: 'Filme' }
+    : { browse: 'Browse', seasonal: 'Seasonal', watchlist: 'Watchlist', history: 'History', filme: 'Movies' };
 
   const isActive = (path: string) => pathname === path;
+
+  // /filme is its own section — "Start" and "Durchsuchen" must stay inside it instead of
+  // dropping back to the anime site, so their target depends on which section we're in.
+  const inFilme = pathname === '/filme' || (pathname?.startsWith('/filme/') ?? false);
+  const homeHref = inFilme ? '/filme' : '/';
+  const browseHref = inFilme ? '/filme/browse' : '/browse';
+  // Only light up the standalone "Filme" pill when neither Start nor Durchsuchen already cover
+  // it (e.g. a movie detail/watch page) — otherwise two pills would highlight at once.
+  const filmeActive = inFilme && pathname !== homeHref && pathname !== browseHref;
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-[#0a0a0f]/80 backdrop-blur-md border-b border-white/[0.06]">
@@ -47,8 +56,9 @@ export default function Navbar() {
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-1 h-full">
-              <NavLink href="/" active={isActive('/')}>{language === 'de' ? 'Start' : 'Home'}</NavLink>
-              <NavLink href="/browse" active={isActive('/browse')}>{navLinks.browse}</NavLink>
+              <NavLink href={homeHref} active={isActive(homeHref)}>{language === 'de' ? 'Start' : 'Home'}</NavLink>
+              <NavLink href={browseHref} active={isActive(browseHref)}>{navLinks.browse}</NavLink>
+              <NavLink href="/filme" active={filmeActive}>{navLinks.filme}</NavLink>
               <NavLink href="/seasonal" active={isActive('/seasonal')}>{navLinks.seasonal}</NavLink>
               <NavLink href="/watchlist" active={isActive('/watchlist')}>{navLinks.watchlist}</NavLink>
               <NavLink href="/history" active={isActive('/history')}>{navLinks.history}</NavLink>

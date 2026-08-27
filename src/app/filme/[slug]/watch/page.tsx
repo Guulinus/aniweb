@@ -54,6 +54,42 @@ function WatchContent() {
       .catch(() => {});
   }, [slug]);
 
+  const titleRef = useRef(title);
+  const posterRef = useRef('');
+  const saveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => { titleRef.current = title; }, [title]);
+
+  useEffect(() => {
+    fetch(`/api/filmpalast/movie/${slug}?id=${slug}`)
+      .then(r => r.json())
+      .then(data => { if (data.posterImage) posterRef.current = data.posterImage; })
+      .catch(() => {});
+  }, [slug]);
+
+  const savePosition = () => {
+    const video = containerRef.current?.querySelector('video');
+    if (!video) return;
+    const currentTime = Math.floor(video.currentTime);
+    const duration = Math.floor(video.duration);
+    if (!currentTime || !duration || currentTime <= 0) return;
+
+    const remaining = duration - currentTime;
+    if (remaining <= 1) {
+      localStorage.removeItem(`filmPosition:${slug}`);
+      return;
+    }
+
+    localStorage.setItem(`filmPosition:${slug}`, JSON.stringify({ time: currentTime, duration, updatedAt: Date.now() }));
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('filmHistory') ?? '[]');
+      const entry = { slug, title: titleRef.current, posterImage: posterRef.current, watchedAt: Date.now() };
+      const updated = [entry, ...existing.filter((h: any) => h.slug !== slug)].slice(0, 50);
+      localStorage.setItem('filmHistory', JSON.stringify(updated));
+    } catch {}
+  };
+
   useEffect(() => {
     if (!containerRef.current || links.length === 0) return;
     const link = links[selectedLink];
@@ -78,31 +114,50 @@ function WatchContent() {
       fullscreen: true,
       fullscreenWeb: true,
       shortcut: true,
-      customType: isHls ? {
-        m3u8: function (video: HTMLVideoElement, streamUrl: string) {
-          if (Hls.isSupported()) {
-            const hls = new Hls({
-              enableWorker: true,
-              lowLatencyMode: false,
-              maxBufferLength: 60,
-              maxMaxBufferLength: 600,
-              startLevel: -1,
-            });
-            hls.loadSource(streamUrl);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.ERROR, (_e: unknown, data: { type: string; fatal: boolean }) => {
-              if (data.fatal) console.error('HLS error:', data);
-            });
-            hlsRef.current = hls;
-          } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = streamUrl;
-          }
+      // Artplayer requires `customType` to be an object whenever the key is present at all —
+      // passing `customType: undefined` for non-HLS links throws ("require 'object' type, but
+      // got 'undefined'") and crashes the whole page, so the key must be omitted entirely here.
+      ...(isHls ? {
+        customType: {
+          m3u8: function (video: HTMLVideoElement, streamUrl: string) {
+            if (Hls.isSupported()) {
+              const hls = new Hls({
+                enableWorker: true,
+                lowLatencyMode: false,
+                maxBufferLength: 60,
+                maxMaxBufferLength: 600,
+                startLevel: -1,
+              });
+              hls.loadSource(streamUrl);
+              hls.attachMedia(video);
+              hls.on(Hls.Events.ERROR, (_e: unknown, data: { type: string; fatal: boolean }) => {
+                if (data.fatal) console.error('HLS error:', data);
+              });
+              hlsRef.current = hls;
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+              video.src = streamUrl;
+            }
+          },
         },
-      } : undefined,
+      } : {}),
     } as any);
+
+    art.on('ready', () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(`filmPosition:${slug}`) ?? 'null');
+        if (saved?.time && saved.time > 5) art.seek = saved.time;
+      } catch {}
+    });
+
+    art.on('pause', savePosition);
+    saveIntervalRef.current = setInterval(() => {
+      const video = containerRef.current?.querySelector('video');
+      if (video && !video.paused) savePosition();
+    }, 5000);
 
     playerRef.current = art;
     return () => {
+      if (saveIntervalRef.current) { clearInterval(saveIntervalRef.current); saveIntervalRef.current = null; }
       if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
       if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
     };

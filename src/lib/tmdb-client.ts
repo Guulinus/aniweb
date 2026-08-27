@@ -65,6 +65,35 @@ export async function searchTmdbMovie(query: string): Promise<TmdbMovie[]> {
   }
 }
 
+export interface TmdbPopularCandidate {
+  title: string;
+  originalTitle: string;
+  year: number | null;
+}
+
+// Real-world popularity/rating signal (à la Netflix's "Trending"/"Popular") to rank curated
+// homepage suggestions by, since filmpalast's own listing order is just upload recency.
+export async function getTmdbPopularMovies(pages = 2): Promise<TmdbPopularCandidate[]> {
+  const candidates: TmdbPopularCandidate[] = [];
+  for (let page = 1; page <= pages; page++) {
+    try {
+      const res = await fetch(
+        `${TMDB_BASE}/movie/popular?api_key=${TMDB_API_KEY}&language=de-DE&region=DE&page=${page}`
+      );
+      const data = await res.json();
+      for (const m of data.results ?? []) {
+        if (!m.title || m.adult) continue;
+        candidates.push({
+          title: m.title,
+          originalTitle: m.original_title || m.title,
+          year: m.release_date ? parseInt(m.release_date.substring(0, 4)) : null,
+        });
+      }
+    } catch {}
+  }
+  return candidates;
+}
+
 export async function getTmdbMovieTrailer(query: string): Promise<string | null> {
   try {
     const res = await fetch(

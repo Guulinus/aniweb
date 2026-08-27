@@ -248,8 +248,13 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
       layers: [],
       mutex: true,
       shortcut: true,
-      customType: isHls
+      // Artplayer requires `customType` to be an object whenever the key is present at all —
+      // passing `customType: undefined` for non-HLS links throws ("require 'object' type, but
+      // got 'undefined'") and crashes the whole watch page, so the key must be omitted entirely
+      // (via spread) rather than set to undefined in the non-HLS branch.
+      ...(isHls
         ? {
+          customType: {
             m3u8: function (video: HTMLVideoElement, streamUrl: string) {
               if (hlsRef.current) {
                 hlsRef.current.destroy();
@@ -315,8 +320,9 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
                 }, { once: true });
               }
             },
-          }
-        : undefined,
+          },
+        }
+        : {}),
     } as any);
 
     playerRef.current = art;

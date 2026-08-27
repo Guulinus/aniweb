@@ -2,6 +2,24 @@ import * as cheerio from 'cheerio';
 
 const M2K_BASE = 'https://movie2k.ch';
 
+// movie2k is only ever used as a secondary source (fallback poster/title, extra stream
+// mirrors) — filmpalast alone is enough to render the page, so this must never be allowed
+// to stall the whole detail page load if movie2k itself is slow or unresponsive.
+const M2K_TIMEOUT_MS = 6000;
+
+async function fetchWithTimeout(url: string, timeoutMs = M2K_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface Movie2kStreamSource {
   hoster: string;
   embedUrl: string;
@@ -68,9 +86,7 @@ function findBestMatch<T>(items: T[], searchTerm: string, getTitle: (item: T) =>
 export async function searchMovie2k(query: string): Promise<Array<{ title: string; id: string; posterImage: string }>> {
   try {
     const cleanQuery = query.replace(/\s*\(\d{4}\)\s*$/, '').trim();
-    const res = await fetch(`${M2K_BASE}/data/search/?keyword=${encodeURIComponent(cleanQuery)}&lang=en`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
+    const res = await fetchWithTimeout(`${M2K_BASE}/data/search/?keyword=${encodeURIComponent(cleanQuery)}&lang=en`);
     const data = await res.json();
     
     return (data.movies || []).map((m: any) => ({
@@ -85,9 +101,7 @@ export async function searchMovie2k(query: string): Promise<Array<{ title: strin
 
 export async function getMovie2kMovie(movieId: string): Promise<{ streamSources: Movie2kStreamSource[] } | null> {
   try {
-    const res = await fetch(`${M2K_BASE}/data/watch/?_id=${movieId}&lang=en`, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
+    const res = await fetchWithTimeout(`${M2K_BASE}/data/watch/?_id=${movieId}&lang=en`);
     const data = await res.json();
 
     const sources: Movie2kStreamSource[] = [];

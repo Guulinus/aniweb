@@ -59,7 +59,13 @@ function AnimeDetailContent({ slug }: { slug: string }) {
               const movieList = movieEdges.map((e: any) => ({
                 id: e.node.id,
                 title: e.node.title,
-                coverImage: e.node.coverImage ?? null,
+                // AniList's own `large` size is noticeably softer than `extraLarge` — carried
+                // in the `large` field here (not the raw AniList value) to match how every
+                // other cover image in the app is sourced.
+                coverImage: e.node.coverImage ? {
+                  large: e.node.coverImage.extraLarge || e.node.coverImage.large || '',
+                  medium: e.node.coverImage.large || e.node.coverImage.medium || '',
+                } : null,
                 year: e.node.startDate?.year ?? null,
                 relationType: e.relationType,
               }));
