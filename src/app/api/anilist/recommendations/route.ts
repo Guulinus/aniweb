@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
       }));
 
     const hqPosters = await resolveHqPosters(
-      recommendedMedia.map((m: any) => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format }))
+      recommendedMedia.map((m: any) => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format, year: m.startDate?.year ?? null }))
     );
     results.forEach((r: any, i: number) => { if (hqPosters[i]) r.coverImage.large = hqPosters[i]; });
 

@@ -65,7 +65,7 @@ function mapMediaToBasic(media: any): AnimeBasic {
 async function withHqPosters(mediaList: any[]): Promise<AnimeBasic[]> {
   const basics = mediaList.map(mapMediaToBasic);
   const hqPosters = await resolveHqPosters(
-    mediaList.map(m => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format }))
+    mediaList.map(m => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format, year: m.startDate?.year ?? null }))
   );
   basics.forEach((b, i) => { if (hqPosters[i]) b.coverImage.large = hqPosters[i] as string; });
   return basics;
@@ -183,8 +183,8 @@ export async function getAnimeById(id: number): Promise<AnimeDetail> {
     .filter((n: any) => n?.format === 'MOVIE');
 
   const [mainHqPoster, relationHqPosters] = await Promise.all([
-    resolveHqPoster({ romaji: media.title?.romaji ?? '', english: media.title?.english, format: media.format }),
-    resolveHqPosters(movieNodes.map((n: any) => ({ romaji: n.title?.romaji ?? '', english: n.title?.english, format: n.format }))),
+    resolveHqPoster({ romaji: media.title?.romaji ?? '', english: media.title?.english, format: media.format, year: media.startDate?.year ?? null }),
+    resolveHqPosters(movieNodes.map((n: any) => ({ romaji: n.title?.romaji ?? '', english: n.title?.english, format: n.format, year: n.startDate?.year ?? null }))),
   ]);
 
   if (mainHqPoster) media.coverImage.extraLarge = mainHqPoster;
@@ -290,6 +290,7 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
             coverImage { extraLarge large medium color }
             episodes
             format
+            startDate { year }
           }
         }
       }
@@ -347,7 +348,7 @@ export async function getAnimeCalendar(): Promise<Map<string, CalendarEntry[]>> 
   const hqPosters = await resolveHqPosters(
     entries.map(e => {
       const raw = rawMedia.get(e.id);
-      return { romaji: raw?.title?.romaji ?? e.title.romaji, english: raw?.title?.english ?? e.title.english, format: raw?.format };
+      return { romaji: raw?.title?.romaji ?? e.title.romaji, english: raw?.title?.english ?? e.title.english, format: raw?.format, year: raw?.startDate?.year ?? null };
     })
   );
   entries.forEach((e, i) => { if (hqPosters[i]) e.coverImage.large = hqPosters[i] as string; });

@@ -111,7 +111,7 @@ async function syncPopularAnime(db: Database.Database) {
     // this is what lets the popular/trending pages serve the high-res, textless TMDB poster
     // instantly with no per-request TMDB round trip and no low-then-high swap.
     const hqPosters = await resolveHqPosters(
-      media.map(m => ({ romaji: m.title.romaji, english: m.title.english, format: m.format }))
+      media.map(m => ({ romaji: m.title.romaji, english: m.title.english, format: m.format, year: m.startDate?.year ?? null }))
     );
 
     const stmt = db.prepare(`

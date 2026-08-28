@@ -56,7 +56,7 @@ export async function GET() {
     }));
 
     const hqPosters = await resolveHqPosters(
-      media.map((m: any) => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format }))
+      media.map((m: any) => ({ romaji: m.title?.romaji ?? '', english: m.title?.english, format: m.format, year: m.startDate?.year ?? null }))
     );
     results.forEach((r: any, i: number) => { if (hqPosters[i]) r.coverImage.large = hqPosters[i]; });
 

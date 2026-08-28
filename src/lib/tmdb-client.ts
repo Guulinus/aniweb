@@ -151,11 +151,32 @@ export async function getTmdbMovieTrailer(query: string): Promise<string | null>
   }
 }
 
+// Strips trailing season/cour markers ("Season 3", "2nd Season", "Part 2", "Cour 2") that
+// AniList includes in the title but TMDB's show name never has — TMDB's search is not fuzzy
+// enough to find "Attack on Titan" when queried as "Attack on Titan Season 3" and returns zero
+// results, so the base title needs to be tried as its own candidate.
+function stripSeasonSuffix(t: string): string {
+  let prev: string;
+  let cur = t.replace(/\s*\((?:TV|OVA|ONA|Movie|Special)\)\s*$/i, '').trim();
+  // Suffixes can stack ("... Season 3 Part 2") — strip repeatedly until nothing more matches,
+  // one single pass would leave "Season 3" behind after only removing "Part 2".
+  do {
+    prev = cur;
+    cur = cur
+      .replace(/[,:\-]?\s*(?:\d+(?:st|nd|rd|th)|final)\s+season\s*$/i, '')
+      .replace(/[,:\-]?\s*season\s+\d+\s*$/i, '')
+      .replace(/[,:\-]?\s*part\s+\d+\s*$/i, '')
+      .replace(/[,:\-]?\s*cour\s+\d+\s*$/i, '')
+      .trim();
+  } while (cur !== prev && cur.length > 0);
+  return cur;
+}
+
 export async function searchTmdbId(romaji: string, english?: string | null): Promise<number | null> {
   // Trailing disambiguation markers like "(TV)" (used by AniList when multiple
   // entries share a title) don't exist on TMDB and make the search return zero
   // results, so strip them before querying.
-  const clean = (t: string) => t.replace(/\s*\((?:TV|OVA|ONA|Movie|Special)\)\s*$/i, '').trim();
+  const clean = stripSeasonSuffix;
   // English titles are far more likely to exactly match TMDB's (usually English) show
   // titles than romaji, so try both languages verbatim first and only fall back to the
   // stripped versions afterward — otherwise a cleaned romaji title can match an unrelated
@@ -186,9 +207,8 @@ export async function searchTmdbId(romaji: string, english?: string | null): Pro
 // Stricter variant for the one place a wrong match is highly visible (the detail-page hero
 // poster) — returns null instead of guessing when nothing actually looks like the right show.
 export async function searchTmdbIdStrict(romaji: string, english?: string | null): Promise<number | null> {
-  const clean = (t: string) => t.replace(/\s*\((?:TV|OVA|ONA|Movie|Special)\)\s*$/i, '').trim();
   const titles = [english, romaji].filter(Boolean) as string[];
-  const candidates = Array.from(new Set([...titles, ...titles.map(clean)]));
+  const candidates = Array.from(new Set([...titles, ...titles.map(stripSeasonSuffix)]));
 
   for (const title of candidates) {
     try {
@@ -212,25 +232,82 @@ interface TmdbImageEntry {
   height?: number;
 }
 
+function pickBestPoster(posters: TmdbImageEntry[]): string | null {
+  if (posters.length === 0) return null;
+  // TMDB posters usually carry a baked-in title logo in whatever language they're tagged
+  // with — `iso_639_1: null` is TMDB's convention for the textless/art-only variant, which
+  // is what we actually want here (matches AniList's plain-art cover style, no printed title).
+  const portrait = (p: TmdbImageEntry) => !p.width || !p.height || p.height / p.width >= 1.2;
+  const textless = posters.filter(p => p.iso_639_1 === null && portrait(p));
+  const pool = textless.length > 0 ? textless : posters.filter(portrait);
+  const best = [...pool].sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))[0];
+  return best?.file_path ? `${TMDB_IMG_POSTER_XL}${best.file_path}` : null;
+}
+
 export async function getTmdbPoster(tmdbId: number, type: 'tv' | 'movie' = 'tv'): Promise<string | null> {
   try {
     const res = await fetch(`${TMDB_BASE}/${type}/${tmdbId}/images?api_key=${TMDB_API_KEY}`);
     const data = await res.json();
-    const posters = (data.posters ?? []) as TmdbImageEntry[];
-    if (posters.length === 0) return null;
-
-    // TMDB posters usually carry a baked-in title logo in whatever language they're tagged
-    // with — `iso_639_1: null` is TMDB's convention for the textless/art-only variant, which
-    // is what we actually want here (matches AniList's plain-art cover style, no printed title).
-    const portrait = (p: TmdbImageEntry) => !p.width || !p.height || p.height / p.width >= 1.2;
-    const textless = posters.filter(p => p.iso_639_1 === null && portrait(p));
-    const pool = textless.length > 0 ? textless : posters.filter(portrait);
-    const best = [...pool].sort((a, b) => (b.vote_average ?? 0) - (a.vote_average ?? 0))[0];
-
-    return best?.file_path ? `${TMDB_IMG_POSTER_XL}${best.file_path}` : null;
+    return pickBestPoster((data.posters ?? []) as TmdbImageEntry[]);
   } catch {
     return null;
   }
+}
+
+interface TmdbSeasonMeta {
+  seasonNumber: number;
+  year: number | null;
+}
+
+async function getTmdbSeasonYears(tmdbId: number): Promise<TmdbSeasonMeta[]> {
+  try {
+    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}?api_key=${TMDB_API_KEY}`);
+    const data = await res.json();
+    if (!Array.isArray(data.seasons)) return [];
+    return data.seasons
+      .filter((s: any) => s.season_number > 0)
+      .map((s: any) => ({
+        seasonNumber: s.season_number,
+        year: s.air_date ? parseInt(String(s.air_date).slice(0, 4)) : null,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function getTmdbSeasonPoster(tmdbId: number, seasonNumber: number): Promise<string | null> {
+  try {
+    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}/season/${seasonNumber}/images?api_key=${TMDB_API_KEY}`);
+    const data = await res.json();
+    return pickBestPoster((data.posters ?? []) as TmdbImageEntry[]);
+  } catch {
+    return null;
+  }
+}
+
+// TMDB has one poster gallery per show, but also a separate, distinct gallery per season —
+// the show-level one used to be all `getTmdbPoster` ever fetched, so every AniList entry
+// for the same franchise (season 2, season 3, a differently-titled arc) resolved to the exact
+// same tmdbId and therefore the exact same poster. Matching by release year against TMDB's
+// per-season air dates (title-based season matching is unreliable — arcs rarely share TMDB's
+// "Season N" naming) picks the actual season-specific art instead, when one exists.
+async function getTmdbShowPoster(tmdbId: number, year: number | null | undefined): Promise<string | null> {
+  if (year) {
+    const seasons = await getTmdbSeasonYears(tmdbId);
+    const withYear = seasons.filter(s => s.year !== null);
+    if (withYear.length > 0) {
+      const closest = withYear.reduce((best, s) =>
+        Math.abs((s.year as number) - year) < Math.abs((best.year as number) - year) ? s : best
+      );
+      // Only trust the match if it's actually close — otherwise this is probably the wrong
+      // show entirely and falling back to the generic poster is safer than a random season.
+      if (Math.abs((closest.year as number) - year) <= 1) {
+        const seasonPoster = await getTmdbSeasonPoster(tmdbId, closest.seasonNumber);
+        if (seasonPoster) return seasonPoster;
+      }
+    }
+  }
+  return getTmdbPoster(tmdbId, 'tv');
 }
 
 async function searchTmdbMovieIdStrict(romaji: string, english?: string | null): Promise<number | null> {
@@ -257,6 +334,7 @@ export interface HqPosterCandidate {
   romaji: string;
   english?: string | null;
   format?: string | null;
+  year?: number | null;
 }
 
 // The one entry point every cover-image call site should go through for the "high quality,
@@ -264,7 +342,10 @@ export interface HqPosterCandidate {
 // so a slow/rate-limited TMDB can't stall the page — callers fall back to AniList's own cover
 // when this resolves to null (timeout, no confident match, or no textless art available).
 export async function resolveHqPoster(candidate: HqPosterCandidate): Promise<string | null> {
-  const cacheKey = `${candidate.format ?? 'TV'}:${candidate.english || candidate.romaji}`;
+  // Keyed by year too — otherwise every season/arc of the same franchise (same title search,
+  // same tmdbId) would share one cache entry and thus one poster, right back to the bug this
+  // whole year-matching path exists to fix.
+  const cacheKey = `${candidate.format ?? 'TV'}:${candidate.year ?? ''}:${candidate.english || candidate.romaji}`;
   const cached = hqPosterCache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.url;
 
@@ -274,7 +355,7 @@ export async function resolveHqPoster(candidate: HqPosterCandidate): Promise<str
       return id ? getTmdbPoster(id, 'movie') : null;
     }
     const id = await searchTmdbIdStrict(candidate.romaji, candidate.english);
-    return id ? getTmdbPoster(id, 'tv') : null;
+    return id ? getTmdbShowPoster(id, candidate.year) : null;
   };
 
   let result: string | null = null;
