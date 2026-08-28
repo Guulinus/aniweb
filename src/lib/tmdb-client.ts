@@ -188,7 +188,8 @@ export async function searchTmdbId(romaji: string, english?: string | null): Pro
   for (const title of candidates) {
     try {
       const res = await fetch(
-        `${TMDB_BASE}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`
+        `${TMDB_BASE}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`,
+        { next: { revalidate: 21600 } }
       );
       const data = await res.json();
       const results = data.results ?? [];
@@ -213,7 +214,8 @@ export async function searchTmdbIdStrict(romaji: string, english?: string | null
   for (const title of candidates) {
     try {
       const res = await fetch(
-        `${TMDB_BASE}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`
+        `${TMDB_BASE}/search/tv?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`,
+        { next: { revalidate: 21600 } }
       );
       const data = await res.json();
       const results = data.results ?? [];
@@ -246,7 +248,7 @@ function pickBestPoster(posters: TmdbImageEntry[]): string | null {
 
 export async function getTmdbPoster(tmdbId: number, type: 'tv' | 'movie' = 'tv'): Promise<string | null> {
   try {
-    const res = await fetch(`${TMDB_BASE}/${type}/${tmdbId}/images?api_key=${TMDB_API_KEY}`);
+    const res = await fetch(`${TMDB_BASE}/${type}/${tmdbId}/images?api_key=${TMDB_API_KEY}`, { next: { revalidate: 21600 } });
     const data = await res.json();
     return pickBestPoster((data.posters ?? []) as TmdbImageEntry[]);
   } catch {
@@ -261,7 +263,7 @@ interface TmdbSeasonMeta {
 
 async function getTmdbSeasonYears(tmdbId: number): Promise<TmdbSeasonMeta[]> {
   try {
-    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}?api_key=${TMDB_API_KEY}`);
+    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}?api_key=${TMDB_API_KEY}`, { next: { revalidate: 21600 } });
     const data = await res.json();
     if (!Array.isArray(data.seasons)) return [];
     return data.seasons
@@ -277,7 +279,7 @@ async function getTmdbSeasonYears(tmdbId: number): Promise<TmdbSeasonMeta[]> {
 
 async function getTmdbSeasonPoster(tmdbId: number, seasonNumber: number): Promise<string | null> {
   try {
-    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}/season/${seasonNumber}/images?api_key=${TMDB_API_KEY}`);
+    const res = await fetch(`${TMDB_BASE}/tv/${tmdbId}/season/${seasonNumber}/images?api_key=${TMDB_API_KEY}`, { next: { revalidate: 21600 } });
     const data = await res.json();
     return pickBestPoster((data.posters ?? []) as TmdbImageEntry[]);
   } catch {
@@ -291,30 +293,38 @@ async function getTmdbSeasonPoster(tmdbId: number, seasonNumber: number): Promis
 // same tmdbId and therefore the exact same poster. Matching by release year against TMDB's
 // per-season air dates (title-based season matching is unreliable — arcs rarely share TMDB's
 // "Season N" naming) picks the actual season-specific art instead, when one exists.
+//
+// The show-level poster is fetched in parallel with the season lookup (not only as a fallback
+// after it) purely for latency — same total requests when a season match is found and used,
+// one extra when it isn't, but no added round trip either way.
 async function getTmdbShowPoster(tmdbId: number, year: number | null | undefined): Promise<string | null> {
-  if (year) {
-    const seasons = await getTmdbSeasonYears(tmdbId);
-    const withYear = seasons.filter(s => s.year !== null);
-    if (withYear.length > 0) {
-      const closest = withYear.reduce((best, s) =>
-        Math.abs((s.year as number) - year) < Math.abs((best.year as number) - year) ? s : best
-      );
-      // Only trust the match if it's actually close — otherwise this is probably the wrong
-      // show entirely and falling back to the generic poster is safer than a random season.
-      if (Math.abs((closest.year as number) - year) <= 1) {
-        const seasonPoster = await getTmdbSeasonPoster(tmdbId, closest.seasonNumber);
-        if (seasonPoster) return seasonPoster;
-      }
+  if (!year) return getTmdbPoster(tmdbId, 'tv');
+
+  const [seasons, showPoster] = await Promise.all([
+    getTmdbSeasonYears(tmdbId),
+    getTmdbPoster(tmdbId, 'tv'),
+  ]);
+
+  const withYear = seasons.filter(s => s.year !== null);
+  if (withYear.length > 0) {
+    const closest = withYear.reduce((best, s) =>
+      Math.abs((s.year as number) - year) < Math.abs((best.year as number) - year) ? s : best
+    );
+    // Only trust the match if it's actually close — otherwise this is probably the wrong
+    // show entirely and falling back to the generic poster is safer than a random season.
+    if (Math.abs((closest.year as number) - year) <= 1) {
+      const seasonPoster = await getTmdbSeasonPoster(tmdbId, closest.seasonNumber);
+      if (seasonPoster) return seasonPoster;
     }
   }
-  return getTmdbPoster(tmdbId, 'tv');
+  return showPoster;
 }
 
 async function searchTmdbMovieIdStrict(romaji: string, english?: string | null): Promise<number | null> {
   const candidates = [english, romaji].filter(Boolean) as string[];
   for (const title of candidates) {
     try {
-      const res = await fetch(`${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`);
+      const res = await fetch(`${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`, { next: { revalidate: 21600 } });
       const data = await res.json();
       const results = data.results ?? [];
       const validated = results.slice(0, 5).find((r: any) => tmdbResultLikelyMatches(r, candidates));
@@ -328,7 +338,7 @@ async function searchTmdbMovieIdStrict(romaji: string, english?: string | null):
 // this gets reused heavily across users hitting the same popular/trending/browse rows.
 const hqPosterCache = new Map<string, { url: string | null; expiresAt: number }>();
 const HQ_POSTER_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const HQ_POSTER_TIMEOUT_MS = 3000;
+const HQ_POSTER_TIMEOUT_MS = 5000;
 
 export interface HqPosterCandidate {
   romaji: string;
@@ -375,7 +385,7 @@ export async function resolveHqPoster(candidate: HqPosterCandidate): Promise<str
 // Bulk variant for list pages (browse/popular/trending/search/calendar/seasonal) — resolves
 // with bounded concurrency so a 20-50 item page doesn't fire that many requests at once, and
 // caps the whole batch so one slow lookup can't hold up the rest of an already-slow page.
-export async function resolveHqPosters(candidates: HqPosterCandidate[], concurrency = 6): Promise<(string | null)[]> {
+export async function resolveHqPosters(candidates: HqPosterCandidate[], concurrency = 10): Promise<(string | null)[]> {
   const results: (string | null)[] = new Array(candidates.length).fill(null);
   let idx = 0;
   async function worker() {
