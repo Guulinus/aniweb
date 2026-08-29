@@ -9,6 +9,7 @@ interface EpisodeListProps {
   animeSlug: string;
   aniworldSlug: string | null;
   animeId: number;
+  animeTitle?: string;
   seasons: AniworldSeason[];
   defaultSeason?: number | null;
   episodeThumbnails?: Record<number, string> | null;
@@ -81,7 +82,7 @@ function saveWatchProgress(animeId: number, episode: number) {
   localStorage.setItem(`lastWatched:${animeId}`, episode.toString());
 }
 
-export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons, defaultSeason, episodeThumbnails, episodeDurations, movies, movieSlugs }: EpisodeListProps) {
+export default function EpisodeList({ animeSlug, aniworldSlug, animeId, animeTitle, seasons, defaultSeason, episodeThumbnails, episodeDurations, movies, movieSlugs }: EpisodeListProps) {
   const { language } = useLanguage();
   const [activeSeason, setActiveSeason] = useState<number>(defaultSeason || 1);
   const [watchData, setWatchData] = useState<WatchData>({ watched: [], progress: {}, lastWatched: null });
@@ -100,12 +101,14 @@ export default function EpisodeList({ animeSlug, aniworldSlug, animeId, seasons,
   useEffect(() => {
     if (filmTitles.length === 0) { setFilmInfos({}); return; }
     let cancelled = false;
-    fetch(`/api/tmdb/film-info?${filmTitles.map(t => `title=${encodeURIComponent(t)}`).join('&')}`)
+    const params = filmTitles.map(t => `title=${encodeURIComponent(t)}`).join('&')
+      + (animeTitle ? `&context=${encodeURIComponent(animeTitle)}` : '');
+    fetch(`/api/tmdb/film-info?${params}`)
       .then(r => r.json())
       .then(data => { if (!cancelled) setFilmInfos(data.films ?? {}); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [filmTitlesKey, filmTitles.length]);
+  }, [filmTitlesKey, filmTitles.length, animeTitle]);
 
   const sortedSeasons = useMemo(() => [...seasons].sort((a, b) => a.seasonNumber - b.seasonNumber), [seasons]);
 

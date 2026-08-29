@@ -29,10 +29,29 @@ function tmdbResultLikelyMatches(result: { name?: string; original_name?: string
     const base = c.split(/[:\-]/)[0].trim();
     return base && base !== c ? [c, base] : [c];
   });
+  // A short/generic candidate ("Bedrängnis", "HLB" — common for AniWorld's own scraped film
+  // titles) is a substring of countless unrelated TMDB titles ("In äußerster Bedrängnis"), so
+  // plain `includes()` alone accepted totally wrong movies. Only trust it when the two titles
+  // are close in length — a real match, not one string incidentally containing the other.
+  const closeInLength = (a: string, b: string) => {
+    const longer = Math.max(a.length, b.length);
+    return longer > 0 && Math.min(a.length, b.length) / longer >= 0.6;
+  };
+  // For a "franchise name + film subtitle" combined candidate, TMDB's real title often has
+  // extra words wedged in between the two ("Attack on Titan - Movie Teil 2: Flügel der
+  // Freiheit"), which breaks plain substring containment even though it's the right movie.
+  // Requiring every significant word to appear somewhere (not necessarily contiguous) handles
+  // that, while still needing at least two such words so it can't fire on a single short one.
+  const wordsAllPresent = (candidate: string, result: string) => {
+    const words = candidate.split(' ').filter(w => w.length > 2);
+    return words.length >= 2 && words.every(w => result.includes(w));
+  };
   return withBaseTitles.some(c => {
     const nc = normalizeTmdbTitle(c);
     if (!nc || nc.length < 3) return false;
-    return resultTitles.some(rt => rt === nc || rt.includes(nc) || nc.includes(rt));
+    return resultTitles.some(rt =>
+      rt === nc || ((rt.includes(nc) || nc.includes(rt)) && closeInLength(rt, nc)) || wordsAllPresent(nc, rt)
+    );
   });
 }
 
@@ -50,14 +69,38 @@ export interface TmdbFilmInfo {
   year: number | null;
 }
 
-export async function getTmdbFilmInfo(title: string): Promise<TmdbFilmInfo | null> {
+// `context` is the parent anime's own title — AniWorld's scraped film titles are frequently
+// just the subtitle of a compilation movie ("Flügel der Freiheit" for what TMDB lists as
+// "Attack on Titan - Movie Teil 2: Flügel der Freiheit"), or short/generic German words or
+// abbreviations ("Bedrängnis", "HLB") with no franchise context at all. Searching with the
+// franchise name prepended finds the right movie in the first case, and searching the bare
+// title alone would otherwise match totally unrelated movies in the second (this is how
+// "Angry Birds" or "One Piece" ended up as a film poster under a random, unrelated anime).
+export async function getTmdbFilmInfo(title: string, context?: string | null): Promise<TmdbFilmInfo | null> {
+  const candidates = context ? [title, `${context} ${title}`] : [title];
+  const queries = context ? [`${context} ${title}`, title] : [title];
+
+  for (const query of queries) {
+    try {
+      const res = await fetch(
+        `${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&language=de-DE`
+      );
+      const data = await res.json();
+      const matches = (data.results ?? []).filter((m: any) => m.title && !m.adult).slice(0, 5)
+        .filter((m: any) => tmdbResultLikelyMatches(m, candidates));
+      if (matches.length === 0) continue;
+      // AniWorld films are (virtually) always Japanese-language anime — prefer that over an
+      // unrelated same-named live-action film TMDB also validated (e.g. a horror movie
+      // literally titled "You're Next", same as an MHA movie's own subtitle).
+      const movie = matches.find((m: any) => m.original_language === 'ja') ?? matches[0];
+      return await buildTmdbFilmInfo(movie);
+    } catch {}
+  }
+  return null;
+}
+
+async function buildTmdbFilmInfo(movie: any): Promise<TmdbFilmInfo | null> {
   try {
-    const res = await fetch(
-      `${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE`
-    );
-    const data = await res.json();
-    const movie = data.results?.find((m: any) => m.title && !m.adult) ?? data.results?.[0];
-    if (!movie) return null;
 
     let runtime: number | null = null;
     try {

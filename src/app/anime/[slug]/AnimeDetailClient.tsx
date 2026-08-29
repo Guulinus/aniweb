@@ -508,6 +508,7 @@ function AnimeDetailContent({ slug }: { slug: string }) {
               animeSlug={displaySlug}
               aniworldSlug={filmTarget?.slug ?? aniworldSlug}
               animeId={anime.id}
+              animeTitle={title}
               seasons={seasons}
               defaultSeason={filmTarget ? filmTarget.season : (titleSeason ?? 1)}
               episodeThumbnails={mergedThumbnails ?? anime.episodeThumbnails}
