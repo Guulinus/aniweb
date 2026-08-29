@@ -306,18 +306,28 @@ async function getTmdbShowPoster(tmdbId: number, year: number | null | undefined
   ]);
 
   const withYear = seasons.filter(s => s.year !== null);
-  if (withYear.length > 0) {
-    const closest = withYear.reduce((best, s) =>
-      Math.abs((s.year as number) - year) < Math.abs((best.year as number) - year) ? s : best
-    );
-    // Only trust the match if it's actually close — otherwise this is probably the wrong
-    // show entirely and falling back to the generic poster is safer than a random season.
-    if (Math.abs((closest.year as number) - year) <= 1) {
-      const seasonPoster = await getTmdbSeasonPoster(tmdbId, closest.seasonNumber);
-      if (seasonPoster) return seasonPoster;
-    }
+
+  // No season year data to compare against at all — can't tell a real single-season show from
+  // a franchise TMDB just hasn't fully catalogued, so trust the generic poster; there's nothing
+  // better available anyway.
+  if (withYear.length === 0) return showPoster;
+
+  const closest = withYear.reduce((best, s) =>
+    Math.abs((s.year as number) - year) < Math.abs((best.year as number) - year) ? s : best
+  );
+  if (Math.abs((closest.year as number) - year) <= 1) {
+    const seasonPoster = await getTmdbSeasonPoster(tmdbId, closest.seasonNumber);
+    if (seasonPoster) return seasonPoster;
   }
-  return showPoster;
+
+  // Season data exists but nothing confidently matches this entry's year (e.g. TMDB only ever
+  // catalogued "Season 1" for a franchise AniList has three separate entries for). Reusing the
+  // generic show poster here is exactly how different seasons ended up with the identical cover
+  // in the first place — a real single-season show's own year would already have matched its
+  // one listed season above, so reaching this point means there genuinely is ambiguity. AniList's
+  // own per-entry cover is always distinct, so it's the safer fallback even though it's lower-res
+  // than a confident TMDB match would be.
+  return null;
 }
 
 async function searchTmdbMovieIdStrict(romaji: string, english?: string | null): Promise<number | null> {
