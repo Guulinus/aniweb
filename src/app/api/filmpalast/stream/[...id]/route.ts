@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFilmpalastMovie } from '@/lib/filmpalast-client';
 import { getMovie2kMovie, searchAndGetMovie2kStreams } from '@/lib/movie2k-client';
-import { extractDirectUrl } from '@/lib/hosters';
+import { extractDirectUrl, getExtractorForUrl } from '@/lib/hosters';
 
 interface StreamResult {
   hoster: string;
@@ -29,7 +29,15 @@ async function resolveStreamSources(
           return { hoster: result.hoster, url: result.url, name: source.hoster, hasAds: false, source: sourceName };
         }
       } catch {}
-      return { hoster: source.hoster.toLowerCase(), url: source.embedUrl, name: source.hoster, hasAds: true, source: sourceName };
+      // An embed *page* URL (firestream.to/e/...) is never itself a playable video source —
+      // handing it to Artplayer when extraction fails just gets a silent "00:00, never loads"
+      // player instead of a clear error. Only fall back to the raw URL for hosters with no
+      // known extractor at all, where it's at least an unverified last resort rather than a
+      // guaranteed dead end.
+      if (!getExtractorForUrl(source.embedUrl, source.hoster)) {
+        return { hoster: source.hoster.toLowerCase(), url: source.embedUrl, name: source.hoster, hasAds: true, source: sourceName };
+      }
+      return { hoster: source.hoster.toLowerCase(), url: '', name: source.hoster, hasAds: true, source: sourceName };
     })
   );
 }

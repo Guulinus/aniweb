@@ -27,7 +27,6 @@ function FilmDetailContent() {
   const [error, setError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [trailer, setTrailer] = useState<string | null>(null);
-  const [showTrailer, setShowTrailer] = useState(false);
 
   const { add, remove, isInWatchlist } = useFilmWatchlist();
   const { showToast } = useToast();
@@ -54,13 +53,6 @@ function FilmDetailContent() {
       .then((data: { trailer?: string | null }) => setTrailer(data.trailer ?? null))
       .catch(() => {});
   }, [movie]);
-
-  useEffect(() => {
-    if (!showTrailer) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowTrailer(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [showTrailer]);
 
   if (loading) {
     return (
@@ -202,15 +194,6 @@ function FilmDetailContent() {
                 </svg>
                 {inWatchlist ? 'Gemerkt' : 'Merken'}
               </button>
-              {trailer && (
-                <button
-                  onClick={() => setShowTrailer(true)}
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-lg text-sm font-semibold transition border text-gray-300 hover:text-white bg-white/10 border-white/[0.15] hover:bg-white/20"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
-                  Trailer
-                </button>
-              )}
             </div>
 
             {/* Description */}
@@ -236,35 +219,26 @@ function FilmDetailContent() {
             )}
           </div>
         </div>
-      </div>
 
-      {showTrailer && trailer && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4"
-          onClick={() => setShowTrailer(false)}
-        >
-          <div className="relative w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setShowTrailer(false)}
-              className="absolute -top-10 right-0 text-gray-300 hover:text-white transition"
-              aria-label="Schließen"
-            >
-              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <div className="aspect-video rounded-xl overflow-hidden shadow-2xl bg-black ring-1 ring-white/10">
+        {trailer && (
+          <section className="mt-12 mb-10">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-1 h-6 rounded-full" style={{ backgroundColor: 'var(--color-primary)' }} />
+              <h2 className="text-xl md:text-2xl font-bold text-white">Trailer</h2>
+            </div>
+            <div className="aspect-video max-w-4xl rounded-xl overflow-hidden shadow-2xl bg-black ring-1 ring-white/10">
               <iframe
-                src={`${trailer}?autoplay=1`}
+                src={trailer}
                 title={`${movie.title} Trailer`}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
+                loading="lazy"
                 className="w-full h-full"
               />
             </div>
-          </div>
-        </div>
-      )}
+          </section>
+        )}
+      </div>
     </div>
   );
 }
