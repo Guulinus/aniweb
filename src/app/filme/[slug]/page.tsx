@@ -119,9 +119,10 @@ function FilmDetailContent() {
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 relative z-10 -mt-40">
         <div className="flex flex-col md:flex-row gap-6 md:gap-8">
-          {/* Poster */}
+          {/* Poster — top-padded to match the info column's pt-2 md:pt-16, so the poster's
+              top edge lines up with the format/year/rating badge row instead of the title. */}
           {movie.posterImage && (
-            <div className="flex-shrink-0 w-48 md:w-56">
+            <div className="flex-shrink-0 w-48 md:w-56 pt-2 md:pt-16">
               <div className="relative overflow-hidden rounded-xl shadow-2xl shadow-black/50">
                 <img
                   src={movie.posterImage}

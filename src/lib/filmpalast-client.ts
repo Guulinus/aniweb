@@ -6,9 +6,13 @@ const FP_BASE = 'https://filmpalast.to';
 // which resolve against our own origin unless rewritten to the real host.
 function absolutize(src: string): string {
   if (!src) return src;
-  if (src.startsWith('//')) return `https:${src}`;
-  if (src.startsWith('/')) return `${FP_BASE}${src}`;
-  return src;
+  let url = src;
+  if (url.startsWith('//')) url = `https:${url}`;
+  else if (url.startsWith('/')) url = `${FP_BASE}${url}`;
+  // Grid/search listings link the small 315px raster; the detail page's own cover art goes up
+  // to 450px (confirmed the only larger bucket filmpalast actually serves) — same URL shape,
+  // just a bigger size folder, so every poster can use the sharper one at no extra cost.
+  return url.replace(/\/files\/movies\/\d+\//, '/files/movies/450/');
 }
 
 export interface FilmStreamSource {

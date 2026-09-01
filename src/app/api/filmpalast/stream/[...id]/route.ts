@@ -82,6 +82,13 @@ async function fetchMovie2kStreams(movieId: string, slug: string): Promise<Strea
 
 type RouteParams = { id: string[] };
 
+// Resolving a firestream link takes two live requests (embed page + token resolve, ~10-15s
+// total) and the signed URL it returns is itself only valid for ~10-12 minutes — caching well
+// under that means a reload or a second visitor watching the same film shortly after gets an
+// instant response instead of re-running the whole resolve chain for a link that still works.
+const streamCache = new Map<string, { links: StreamResult[]; expiresAt: number }>();
+const STREAM_CACHE_TTL_MS = 8 * 60 * 1000;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: RouteParams },
@@ -93,6 +100,12 @@ export async function GET(
 
   if (joined.length < 3) {
     return NextResponse.json({ error: 'Invalid ID' }, { status: 400 });
+  }
+
+  const cacheKey = `${source}:${joined}`;
+  const cached = streamCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    return NextResponse.json({ links: cached.links, available: cached.links.length > 0 });
   }
 
   try {
@@ -108,6 +121,12 @@ export async function GET(
       : [...filmpalastLinks, ...movie2kLinks];
 
     const sortedLinks = dedupeAndSort(allLinks);
+
+    // Only cache an actual result — an empty/failed resolve should be retried on the next
+    // request rather than locked in as "unavailable" for the full TTL.
+    if (sortedLinks.length > 0) {
+      streamCache.set(cacheKey, { links: sortedLinks, expiresAt: Date.now() + STREAM_CACHE_TTL_MS });
+    }
 
     return NextResponse.json({ links: sortedLinks, available: sortedLinks.length > 0 });
   } catch (error) {

@@ -19,9 +19,12 @@ const CATEGORY_URLS: Record<string, string> = {
 
 function absolutize(src: string): string {
   if (!src) return src;
-  if (src.startsWith('//')) return `https:${src}`;
-  if (src.startsWith('/')) return `${FP_BASE}${src}`;
-  return src;
+  let url = src;
+  if (url.startsWith('//')) url = `https:${url}`;
+  else if (url.startsWith('/')) url = `${FP_BASE}${url}`;
+  // Listing pages link the small 315px raster; 450px is the largest bucket filmpalast actually
+  // serves (confirmed against the detail page's own cover art) — same file, bigger folder.
+  return url.replace(/\/files\/movies\/\d+\//, '/files/movies/450/');
 }
 
 function extractSlug(href: string): string {
