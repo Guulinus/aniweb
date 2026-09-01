@@ -215,14 +215,26 @@ export async function getFilmpalastMovie(slug: string): Promise<FilmDetail | nul
     const ratingRaw = parseFloat(ratingAttr || ratingText || '');
     const rating = Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : null;
 
+    // filmpalast lists multiple hosters per movie, but only the first ("verystream"/firestream)
+    // carries a `data-player-url` attribute — the rest (vidaraa, voe, playmate, ...) are plain
+    // `href` links with the same `.iconPlay` class. The old selector only ever matched
+    // `[data-player-url]`, so every other hoster was silently dropped — and for a movie whose
+    // first/only listed hoster happens not to be the data-player-url one (e.g. VOE-only
+    // listings), that meant zero stream sources at all, making the film look unavailable.
+    // Each real hoster has a duplicate, commented-out copy of the same link right after it in
+    // filmpalast's markup (a template leftover) — cheerio parses HTML comments as non-elements,
+    // so `#grap-stream-list a.iconPlay` only ever matches the live one, not the commented copy.
     const streamSources: FilmStreamSource[] = [];
-    $('a[href*="data-player-url"], [data-player-url]').each((_, el) => {
+    const seenUrls = new Set<string>();
+    $('#grap-stream-list a.iconPlay').each((_, el) => {
       const url = $(el).attr('data-player-url') || $(el).attr('href') || '';
-      if (url) {
+      if (!url || url === '#' || seenUrls.has(url)) return;
+      try {
         const urlObj = new URL(url.startsWith('http') ? url : `${FP_BASE}${url}`);
         const hoster = urlObj.hostname.replace(/^www\./, '').split('.')[0];
+        seenUrls.add(url);
         streamSources.push({ hoster, embedUrl: url });
-      }
+      } catch {}
     });
 
     return { title, slug, description, posterImage, bannerImage, genres, year, rating, runtimeMinutes, streamSources };
