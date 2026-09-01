@@ -74,7 +74,7 @@ export default function Navbar() {
           <div className="flex items-center gap-3">
             {/* Mobile Search Icon */}
             <Link
-              href="/search"
+              href={inFilme ? '/filme/browse' : '/search'}
               className="sm:hidden p-2 text-gray-400 hover:text-white rounded-lg transition-colors"
               aria-label="Search"
             >

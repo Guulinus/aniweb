@@ -534,6 +534,112 @@ async function extractVinovo(embedUrl: string): Promise<string | null> {
 }
 
 // ============================================================================
+// FIRESTREAM EXTRACTOR
+// ============================================================================
+// filmpalast's movies mostly resolve to firestream.to embed pages, which were never
+// extracted at all (no pattern matched "firestream"), so the raw embed URL got handed to
+// Artplayer as if it were a video source and playback silently failed — this is the actual
+// reason /filme films couldn't be watched. Firestream signs its real .m3u8 URL behind a
+// one-time token: the embed page ships a `token-blob` and, if not embedded directly, the
+// video-data script's `signedVideoUrl`; the blob must be POSTed back to /api/videos/{slug}
+// /resolve *using the same session cookie* the embed page's own response set (Cloudflare
+// load-balancer affinity — a fresh request without that cookie gets "Token expired").
+function fetchWithCookies(url: string, referer?: string): Promise<{ body: string; cookies: string }> {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith('https') ? https : http;
+    const headers: Record<string, string> = {
+      'User-Agent': USER_AGENT,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    };
+    if (referer) headers['Referer'] = referer;
+    const urlObj = new URL(url);
+    const options: any = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (url.startsWith('https') ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      headers,
+      timeout: 15000,
+      family: 4,
+    };
+    const req = lib.get(options, (res) => {
+      const setCookie = res.headers['set-cookie'] ?? [];
+      const cookies = setCookie.map(c => c.split(';')[0]).join('; ');
+      let body = '';
+      res.on('data', (chunk: string) => (body += chunk));
+      res.on('end', () => resolve({ body, cookies }));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+  });
+}
+
+function postJsonWithCookies<T>(url: string, body: Record<string, string>, referer: string, cookies: string): Promise<T | null> {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith('https') ? https : http;
+    const data = JSON.stringify(body);
+    const urlObj = new URL(url);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': USER_AGENT,
+      'Accept': 'application/json',
+      'Content-Length': Buffer.byteLength(data).toString(),
+      'Referer': referer,
+      'Origin': new URL(referer).origin,
+      'Cookie': cookies,
+    };
+    const options: any = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (url.startsWith('https') ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: 'POST',
+      headers,
+      timeout: 15000,
+      family: 4,
+    };
+    const req = lib.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk: string) => (body += chunk));
+      res.on('end', () => {
+        try { resolve(JSON.parse(body)); } catch { resolve(null); }
+      });
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+async function extractFirestream(embedUrl: string): Promise<string | null> {
+  try {
+    const slugMatch = embedUrl.match(/\/e\/([^/?#]+)/);
+    if (!slugMatch) return null;
+    const slug = slugMatch[1];
+
+    const { body, cookies } = await fetchWithCookies(embedUrl);
+
+    // Some pages ship the signed URL inline (no token round trip needed).
+    const inlineMatch = body.match(/"signedVideoUrl"\s*:\s*"([^"]+)"/);
+    if (inlineMatch) return inlineMatch[1].replace(/\\\//g, '/');
+
+    const tokenMatch = body.match(/id="token-blob"[^>]*>([^<]*)</);
+    if (!tokenMatch) return null;
+    const blob = tokenMatch[1].trim();
+    if (!blob) return null;
+
+    const origin = new URL(embedUrl).origin;
+    const data = await postJsonWithCookies<{ signedVideoUrl?: string; signedVideoSdUrl?: string }>(
+      `${origin}/api/videos/${encodeURIComponent(slug)}/resolve`,
+      { blob },
+      embedUrl,
+      cookies
+    );
+    return data?.signedVideoUrl || data?.signedVideoSdUrl || null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // EXTRACTOR REGISTRY
 // ============================================================================
 
@@ -593,6 +699,11 @@ export const hosterExtractors: HosterExtractor[] = [
     name: 'vinovo',
     patterns: [/vinovo/i],
     extract: extractVinovo,
+  },
+  {
+    name: 'firestream',
+    patterns: [/firestream/i],
+    extract: extractFirestream,
   },
 ];
 

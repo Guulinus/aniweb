@@ -1,15 +1,28 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import type { AnimeBasic } from '@/types';
 import { useLanguage } from '@/hooks/useLanguage';
 
+interface FilmResult {
+  title: string;
+  slug: string;
+  posterImage: string;
+  year?: number | null;
+}
+
 export default function SearchBar() {
   const { language } = useLanguage();
+  const pathname = usePathname();
+  // /filme is its own section (own catalog, own search API) — searching from there must stay
+  // inside it instead of always querying anime, which is what "man kann keine Filme suchen"
+  // (this only ever searched anime, everywhere) actually was.
+  const inFilme = pathname === '/filme' || (pathname?.startsWith('/filme/') ?? false);
   const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AnimeBasic[]>([]);
+  const [filmResults, setFilmResults] = useState<FilmResult[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -34,11 +47,16 @@ export default function SearchBar() {
     localStorage.setItem('recentSearches', JSON.stringify(updated));
   };
 
-  const placeholderText = mounted ? (language === 'de' ? 'Anime suchen...' : 'Search anime...') : '';
+  const placeholderText = mounted
+    ? (inFilme
+      ? (language === 'de' ? 'Filme suchen...' : 'Search movies...')
+      : (language === 'de' ? 'Anime suchen...' : 'Search anime...'))
+    : '';
 
   useEffect(() => {
     if (query.length < 2) {
       setResults([]);
+      setFilmResults([]);
       return;
     }
 
@@ -47,18 +65,25 @@ export default function SearchBar() {
     debounceRef.current = setTimeout(async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/anilist/search?q=${encodeURIComponent(query)}&perPage=5`);
-        const data = await res.json();
-        setResults(data.results ?? []);
+        if (inFilme) {
+          const res = await fetch(`/api/filmpalast/search?q=${encodeURIComponent(query)}`);
+          const data = await res.json();
+          setFilmResults((data.results ?? []).slice(0, 5));
+        } else {
+          const res = await fetch(`/api/anilist/search?q=${encodeURIComponent(query)}&perPage=5`);
+          const data = await res.json();
+          setResults(data.results ?? []);
+        }
       } catch {
         setResults([]);
+        setFilmResults([]);
       } finally {
         setIsLoading(false);
       }
     }, 300);
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query]);
+  }, [query, inFilme]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -74,14 +99,14 @@ export default function SearchBar() {
     e.preventDefault();
     if (query.trim()) {
       saveSearch(query.trim());
-      router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+      router.push(inFilme ? `/filme/browse?q=${encodeURIComponent(query.trim())}` : `/search?q=${encodeURIComponent(query.trim())}`);
       setIsOpen(false);
     }
   };
 
   const handleRecentClick = (search: string) => {
     setQuery(search);
-    router.push(`/search?q=${encodeURIComponent(search)}`);
+    router.push(inFilme ? `/filme/browse?q=${encodeURIComponent(search)}` : `/search?q=${encodeURIComponent(search)}`);
     setIsOpen(false);
   };
 
@@ -122,7 +147,33 @@ export default function SearchBar() {
         </div>
       )}
 
-      {isOpen && results.length > 0 && (
+      {isOpen && inFilme && filmResults.length > 0 && (
+        <div className="absolute top-full mt-2 w-full bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden">
+          {filmResults.map((film) => (
+            <button
+              key={film.slug}
+              onClick={() => {
+                router.push(`/filme/${film.slug}`);
+                saveSearch(film.title);
+                setIsOpen(false);
+                setQuery('');
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-700 focus-visible:bg-gray-700 transition text-left"
+            >
+              <img src={film.posterImage} alt="" className="w-10 h-14 object-cover rounded" loading="lazy" />
+              <span className="text-white text-sm truncate">{film.title}</span>
+            </button>
+          ))}
+          <button
+            onClick={handleSubmit}
+            className="w-full px-4 py-2 text-theme-primary text-sm hover:bg-gray-700 focus-visible:bg-gray-700 transition border-t border-gray-700"
+          >
+            {language === 'de' ? 'Alle Ergebnisse anzeigen' : 'View all results'}
+          </button>
+        </div>
+      )}
+
+      {isOpen && !inFilme && results.length > 0 && (
         <div className="absolute top-full mt-2 w-full bg-gray-800 rounded-lg border border-gray-700 shadow-xl overflow-hidden">
           {results.map((anime) => (
             <button

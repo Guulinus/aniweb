@@ -63,9 +63,15 @@ function FilmBrowseContent() {
     setLoading(false);
   }, []);
 
+  const initialQuery = searchParams.get('q') || '';
+
   useEffect(() => {
     if (initialCategory) browseGenre(initialCategory);
-  }, [initialCategory, browseGenre]);
+    else if (initialQuery) search(initialQuery);
+    // Only meant to run once for whatever the URL was loaded with — `search`/`browseGenre`
+    // are stable (empty-dep useCallback), so this intentionally isn't re-run on their identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCategory, initialQuery]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 pt-20 pb-6">
