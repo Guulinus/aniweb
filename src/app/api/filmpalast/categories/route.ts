@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 import { getHorrorSlugs, matchCuratedMovies } from '@/lib/filmpalast-client';
-import { getTmdbPopularMovies } from '@/lib/tmdb-client';
+import { getTmdbPopularMovies, getTmdbMoviePosters } from '@/lib/tmdb-client';
 
 const FP_BASE = 'https://filmpalast.to';
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
@@ -105,9 +105,15 @@ export async function GET(request: NextRequest) {
     // while also being filed under Horror. The horror-slug cache only covers its first page,
     // so also catch anything self-labeled "Horror" in the title as a cheap backstop.
     const horrorSlugs = await getHorrorSlugs();
-    const filtered = movies.filter(m => !horrorSlugs.has(m.slug) && !/\bhorror\b/i.test(m.title));
+    const filtered = movies.filter(m => !horrorSlugs.has(m.slug) && !/\bhorror\b/i.test(m.title)).slice(0, 20);
 
-    return NextResponse.json({ movies: filtered.slice(0, 20) }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=7200' } });
+    // filmpalast's own listing thumbnails cap out at a small, often lower-quality raster — TMDB
+    // has proper high-res posters for almost every title, so every genre/browse row uses those
+    // instead, falling back to filmpalast's art only when TMDB has no confident match.
+    const tmdbPosters = await getTmdbMoviePosters(filtered.map(m => ({ title: m.title, year: m.year })));
+    const withHqPosters = filtered.map((m, i) => ({ ...m, posterImage: tmdbPosters[i] || m.posterImage }));
+
+    return NextResponse.json({ movies: withHqPosters }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=7200' } });
   } catch {
     return NextResponse.json({ movies: [] });
   }

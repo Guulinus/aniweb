@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { getTmdbMoviePoster, getTmdbMoviePosters } from './tmdb-client';
 
 const FP_BASE = 'https://filmpalast.to';
 
@@ -47,7 +48,7 @@ export async function searchFilmpalast(query: string): Promise<Array<{ title: st
     });
     const html = await res.text();
     const $ = cheerio.load(html);
-    const results: Array<{ title: string; slug: string; posterImage: string }> = [];
+    const results: Array<{ title: string; slug: string; posterImage: string; year: number | null }> = [];
     const seen = new Set<string>();
 
     $('a[href*="/stream/"]').each((_, el) => {
@@ -65,10 +66,13 @@ export async function searchFilmpalast(query: string): Promise<Array<{ title: st
       const posterImage = absolutize($el.find('img').attr('src') || '');
       if (!posterImage) return;
       seen.add(slug);
-      results.push({ title, slug, posterImage });
+      const yearMatch = title.match(/\((\d{4})\)$/);
+      results.push({ title: title.replace(/\s*\(\d{4}\)$/, ''), slug, posterImage, year: yearMatch ? parseInt(yearMatch[1]) : null });
     });
 
-    return results.slice(0, 20);
+    const capped = results.slice(0, 20);
+    const tmdbPosters = await getTmdbMoviePosters(capped.map(r => ({ title: r.title, year: r.year })));
+    return capped.map((r, i) => ({ title: r.title, slug: r.slug, posterImage: tmdbPosters[i] || r.posterImage }));
   } catch {
     return [];
   }
@@ -128,6 +132,7 @@ export interface CuratedCandidate {
   title: string;
   originalTitle?: string;
   year: number | null;
+  posterImage?: string;
 }
 
 export interface CuratedMovie {
@@ -157,7 +162,10 @@ export async function matchCuratedMovies(candidates: CuratedCandidate[], limit: 
           match = findTitleMatch(results, c.originalTitle);
         }
         if (match) {
-          slots[i] = { title: match.title.replace(/\s*\(\d{4}\)$/, ''), slug: match.slug, posterImage: match.posterImage, year: c.year };
+          // The candidate came straight from TMDB's own popular-movies list, so its poster_path
+          // is already the right high-quality art — no need to fall back to filmpalast's or
+          // re-resolve via a second TMDB search.
+          slots[i] = { title: match.title.replace(/\s*\(\d{4}\)$/, ''), slug: match.slug, posterImage: c.posterImage || match.posterImage, year: c.year };
         }
       } catch {}
     }
@@ -185,11 +193,13 @@ export async function getFilmpalastMovie(slug: string): Promise<FilmDetail | nul
     // (which is prefixed with SEO boilerplate like "X HD stream online anschauen - ").
     const description = $('span[itemprop="description"]').first().text().trim()
       || $('meta[name="description"]').attr('content') || '';
-    // No og:image on this site — the real poster is the page's own cover art image.
-    const posterImage = absolutize(
+    // No og:image on this site — the real poster is the page's own cover art image, but it caps
+    // out at a small (450px) raster. TMDB has proper high-res theatrical posters for almost
+    // every movie, so it's tried first and only falls back to filmpalast's own art when TMDB has
+    // no confident match at all.
+    const fallbackPosterImage = absolutize(
       $('img.cover2').attr('src') || $('img.cover').first().attr('src') || $('meta[property="og:image"]').attr('content') || ''
     );
-    const bannerImage = posterImage;
 
     // The sidebar's site-wide genre nav also matches `a[href*="/genre/"]`, so scope to the
     // "Kategorien, Genre" row in the movie's own detail list instead.
@@ -214,6 +224,10 @@ export async function getFilmpalastMovie(slug: string): Promise<FilmDetail | nul
     const ratingText = $('.rating .average').first().text().trim();
     const ratingRaw = parseFloat(ratingAttr || ratingText || '');
     const rating = Number.isFinite(ratingRaw) && ratingRaw > 0 ? ratingRaw : null;
+
+    const tmdbPosterImage = await getTmdbMoviePoster(title, year);
+    const posterImage = tmdbPosterImage || fallbackPosterImage;
+    const bannerImage = posterImage;
 
     // filmpalast lists multiple hosters per movie, but only the first ("verystream"/firestream)
     // carries a `data-player-url` attribute — the rest (vidaraa, voe, playmate, ...) are plain

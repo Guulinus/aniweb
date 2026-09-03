@@ -144,6 +144,7 @@ export interface TmdbPopularCandidate {
   title: string;
   originalTitle: string;
   year: number | null;
+  posterImage: string;
 }
 
 // Real-world popularity/rating signal (à la Netflix's "Trending"/"Popular") to rank curated
@@ -162,11 +163,78 @@ export async function getTmdbPopularMovies(pages = 2): Promise<TmdbPopularCandid
           title: m.title,
           originalTitle: m.original_title || m.title,
           year: m.release_date ? parseInt(m.release_date.substring(0, 4)) : null,
+          // This candidate list already comes straight from TMDB, so its own poster_path is
+          // the high-quality art we want everywhere — no need for a second lookup later.
+          posterImage: m.poster_path ? `${TMDB_IMG_POSTER_XL}${m.poster_path}` : '',
         });
       }
     } catch {}
   }
   return candidates;
+}
+
+// filmpalast's own cover art tops out at a small, often watermarked/blurry raster (max 450px
+// wide) with no textless option — TMDB serves proper up-to-~2000px theatrical posters for
+// virtually every movie, so every film poster site-wide (search, browse, detail, curated rows)
+// is resolved through here instead, falling back to filmpalast's art only when TMDB has no
+// confident match at all. Unlike the anime `resolveHqPoster` pipeline, printed title text on
+// the poster is fine here — movie posters are expected to carry their title/art together.
+const tmdbMoviePosterCache = new Map<string, { url: string | null; expiresAt: number }>();
+const MOVIE_POSTER_TIMEOUT_MS = 4000;
+
+export async function getTmdbMoviePoster(title: string, year?: number | null): Promise<string | null> {
+  const cacheKey = `${year ?? ''}:${title}`;
+  const cached = tmdbMoviePosterCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.url;
+
+  const run = async (): Promise<string | null> => {
+    try {
+      const yearParam = year ? `&primary_release_year=${year}` : '';
+      const res = await fetch(
+        `${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(title)}&language=de-DE${yearParam}`,
+        { next: { revalidate: 21600 } }
+      );
+      const data = await res.json();
+      const results = (data.results ?? []).filter((m: any) => (m.title || m.original_title) && !m.adult);
+      const validated = results.slice(0, 5).find((m: any) => tmdbResultLikelyMatches(m, [title]));
+      const movie = validated ?? results[0];
+      return movie?.poster_path ? `${TMDB_IMG_POSTER_XL}${movie.poster_path}` : null;
+    } catch {
+      return null;
+    }
+  };
+
+  let result: string | null = null;
+  try {
+    result = await Promise.race([
+      run(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), MOVIE_POSTER_TIMEOUT_MS)),
+    ]);
+  } catch {
+    result = null;
+  }
+
+  tmdbMoviePosterCache.set(cacheKey, { url: result, expiresAt: Date.now() + HQ_POSTER_CACHE_TTL_MS });
+  return result;
+}
+
+// Bulk variant for listing pages (search/browse/categories) — bounded concurrency so a 20-item
+// page doesn't fire 20 TMDB requests at once.
+export async function getTmdbMoviePosters(items: Array<{ title: string; year?: number | null }>, concurrency = 8): Promise<(string | null)[]> {
+  const results: (string | null)[] = new Array(items.length).fill(null);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const i = idx++;
+      try {
+        results[i] = await getTmdbMoviePoster(items[i].title, items[i].year);
+      } catch {
+        results[i] = null;
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
 }
 
 export async function getTmdbMovieTrailer(query: string): Promise<string | null> {
