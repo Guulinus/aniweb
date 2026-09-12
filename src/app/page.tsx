@@ -304,7 +304,10 @@ function RecommendationsSection() {
     const fetchRecs = async () => {
       const watchedIds = entries.slice(0, 10);
       if (watchedIds.length === 0) {
-        const res = await fetch('/api/anilist/trending?perPage=16');
+        // No watchlist yet to personalize from — fall back to top-rated (not Trending again,
+        // which the row directly above already shows; a highly-rated, not just popular-right-now,
+        // pick reads as a genuine recommendation rather than a duplicated row).
+        const res = await fetch('/api/anilist/browse?sort=SCORE_DESC&perPage=16');
         const data: { results?: AnimeBasic[] } = await res.json();
         setAnime(data.results ?? []);
         setLoading(false);

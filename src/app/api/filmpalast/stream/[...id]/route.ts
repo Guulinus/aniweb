@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFilmpalastMovie } from '@/lib/filmpalast-client';
 import { getMovie2kMovie, searchAndGetMovie2kStreams } from '@/lib/movie2k-client';
-import { extractDirectUrl, getExtractorForUrl } from '@/lib/hosters';
+import { extractDirectUrl } from '@/lib/hosters';
 
 interface StreamResult {
   hoster: string;
@@ -20,6 +20,11 @@ async function resolveStreamSources(
       if (!source.embedUrl.startsWith('http')) {
         return { hoster: 'Direct', url: source.embedUrl, name: source.hoster, hasAds: true, source: sourceName };
       }
+      // A URL that's already a direct media file (movie2k occasionally lists these straight,
+      // no embed page in between) needs no extraction at all.
+      if (/\.(m3u8|mp4|webm)(\?|$)/i.test(source.embedUrl)) {
+        return { hoster: source.hoster.toLowerCase(), url: source.embedUrl, name: source.hoster, hasAds: false, source: sourceName };
+      }
       try {
         const result = await Promise.race([
           extractDirectUrl(source.embedUrl, source.hoster),
@@ -29,14 +34,13 @@ async function resolveStreamSources(
           return { hoster: result.hoster, url: result.url, name: source.hoster, hasAds: false, source: sourceName };
         }
       } catch {}
-      // An embed *page* URL (firestream.to/e/...) is never itself a playable video source —
-      // handing it to Artplayer when extraction fails just gets a silent "00:00, never loads"
-      // player instead of a clear error. Only fall back to the raw URL for hosters with no
-      // known extractor at all, where it's at least an unverified last resort rather than a
-      // guaranteed dead end.
-      if (!getExtractorForUrl(source.embedUrl, source.hoster)) {
-        return { hoster: source.hoster.toLowerCase(), url: source.embedUrl, name: source.hoster, hasAds: true, source: sourceName };
-      }
+      // An embed *page* URL (firestream.to/e/..., supervideo.tv/e/..., a random mirror domain
+      // with no registered extractor) is never itself a playable video source — handing it to
+      // Artplayer produces a silent "00:00, never loads" player instead of a clear error,
+      // whether or not a known extractor exists for that hoster. AniRoll's whole design
+      // philosophy is "no ads, no iframe players, no DRM — if a hoster fails, the user sees an
+      // error, not an ad page", so every un-extracted embed page is excluded here rather than
+      // handed to the player as an "unverified last resort".
       return { hoster: source.hoster.toLowerCase(), url: '', name: source.hoster, hasAds: true, source: sourceName };
     })
   );
@@ -61,11 +65,33 @@ function dedupeAndSort(links: StreamResult[]): StreamResult[] {
   });
 }
 
+// movie2k accumulates every hoster link anyone has ever submitted for a title (Rocky 5 alone
+// has 150+), and most are dead re-uploads of the same hoster. Extracting all of them in
+// parallel wastes the Pi's limited resources on a page that only needs one working link per
+// hoster — capping to a few candidates per hoster (in case the first is dead) keeps fan-out
+// bounded without meaningfully reducing the odds of finding a working stream.
+const MAX_SOURCES_PER_HOSTER = 3;
+const MAX_TOTAL_MOVIE2K_SOURCES = 30;
+
+function capMovie2kSources(sources: Array<{ hoster: string; embedUrl: string }>): Array<{ hoster: string; embedUrl: string }> {
+  const perHoster = new Map<string, number>();
+  const capped: Array<{ hoster: string; embedUrl: string }> = [];
+  for (const source of sources) {
+    const key = source.hoster.toLowerCase();
+    const count = perHoster.get(key) ?? 0;
+    if (count >= MAX_SOURCES_PER_HOSTER) continue;
+    perHoster.set(key, count + 1);
+    capped.push(source);
+    if (capped.length >= MAX_TOTAL_MOVIE2K_SOURCES) break;
+  }
+  return capped;
+}
+
 async function fetchMovie2kStreams(movieId: string, slug: string): Promise<StreamResult[]> {
   try {
     const movie = await getMovie2kMovie(movieId);
     if (movie?.streamSources && movie.streamSources.length > 0) {
-      return resolveStreamSources(movie.streamSources, 'movie2k');
+      return resolveStreamSources(capMovie2kSources(movie.streamSources), 'movie2k');
     }
   } catch {}
 
@@ -73,7 +99,7 @@ async function fetchMovie2kStreams(movieId: string, slug: string): Promise<Strea
     const titleFromSlug = slug.replace(/-/g, ' ');
     const streams = await searchAndGetMovie2kStreams(titleFromSlug);
     if (streams && streams.length > 0) {
-      return resolveStreamSources(streams, 'movie2k');
+      return resolveStreamSources(capMovie2kSources(streams), 'movie2k');
     }
   } catch {}
 

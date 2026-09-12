@@ -88,11 +88,15 @@ export async function searchMovie2k(query: string): Promise<Array<{ title: strin
     const cleanQuery = query.replace(/\s*\(\d{4}\)\s*$/, '').trim();
     const res = await fetchWithTimeout(`${M2K_BASE}/data/search/?keyword=${encodeURIComponent(cleanQuery)}&lang=en`);
     const data = await res.json();
-    
-    return (data.movies || []).map((m: any) => ({
+
+    // movie2k's search endpoint returns a bare array of movie objects, not `{ movies: [...] }` —
+    // the old `data.movies || []` silently returned `[]` for every single query, which meant the
+    // movie2k fallback (used whenever filmpalast's own hoster is dead/removed) never worked at all.
+    const results = Array.isArray(data) ? data : (data.movies ?? []);
+    return results.map((m: any) => ({
       title: m.title || '',
       id: m._id || '',
-      posterImage: m.poster || '',
+      posterImage: m.poster || m.poster_path || m.img || '',
     }));
   } catch {
     return [];
@@ -104,13 +108,16 @@ export async function getMovie2kMovie(movieId: string): Promise<{ streamSources:
     const res = await fetchWithTimeout(`${M2K_BASE}/data/watch/?_id=${movieId}&lang=en`);
     const data = await res.json();
 
+    // Same API-shape drift as the search endpoint: hoster links now live under `streams`, an
+    // array of `{ stream: embedUrl }` entries — there is no `hosts` object anymore, so the old
+    // code always produced zero stream sources.
     const sources: Movie2kStreamSource[] = [];
-    if (data.hosts) {
-      for (const [hostUrl, embedUrl] of Object.entries(data.hosts)) {
-        const embedStr = embedUrl as string;
-        if (embedStr && embedStr.startsWith('http')) {
-          sources.push({ hoster: identifyHoster(embedStr), embedUrl: embedStr });
-        }
+    const seen = new Set<string>();
+    for (const entry of data.streams ?? []) {
+      const embedStr = entry?.stream as string | undefined;
+      if (embedStr && embedStr.startsWith('http') && !seen.has(embedStr)) {
+        seen.add(embedStr);
+        sources.push({ hoster: identifyHoster(embedStr), embedUrl: embedStr });
       }
     }
 

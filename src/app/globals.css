@@ -183,3 +183,22 @@ button, a, select, input[type="submit"], input[type="button"] {
   50% { width: 60%; margin-left: 20%; }
   100% { width: 0%; margin-left: 100%; }
 }
+
+/* Artplayer's control bar is a fixed-width row of icons — on narrow phones it can still run
+   past the viewport even after the least-used controls are dropped (VideoPlayer.tsx). Letting
+   the icon groups shrink and, as a last resort, scroll horizontally keeps every control
+   reachable instead of silently clipping the rightmost ones (e.g. fullscreen). */
+@media (max-width: 480px) {
+  .art-video-player .art-controls {
+    padding: 0 6px;
+  }
+  .art-video-player .art-controls-right {
+    gap: 2px;
+  }
+  .art-video-player .art-control {
+    flex-shrink: 0;
+  }
+  .art-video-player .art-bottom {
+    overflow-x: auto;
+  }
+}

@@ -237,6 +237,27 @@ export async function getTmdbMoviePosters(items: Array<{ title: string; year?: n
   return results;
 }
 
+// A distinct real-world signal from `getTmdbPopularMovies` (this week's trending, not
+// all-time popularity) — used so the site's "Trending" row is genuinely different content
+// from "Beliebt" instead of both re-scraping the same filmpalast homepage listing.
+export async function getTmdbTrendingMovies(): Promise<TmdbPopularCandidate[]> {
+  const candidates: TmdbPopularCandidate[] = [];
+  try {
+    const res = await fetch(`${TMDB_BASE}/trending/movie/week?api_key=${TMDB_API_KEY}&language=de-DE`);
+    const data = await res.json();
+    for (const m of data.results ?? []) {
+      if (!m.title || m.adult) continue;
+      candidates.push({
+        title: m.title,
+        originalTitle: m.original_title || m.title,
+        year: m.release_date ? parseInt(m.release_date.substring(0, 4)) : null,
+        posterImage: m.poster_path ? `${TMDB_IMG_POSTER_XL}${m.poster_path}` : '',
+      });
+    }
+  } catch {}
+  return candidates;
+}
+
 export async function getTmdbMovieTrailer(query: string): Promise<string | null> {
   try {
     const res = await fetch(

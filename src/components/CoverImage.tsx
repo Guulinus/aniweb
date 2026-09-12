@@ -27,24 +27,31 @@ function buildTmdbSrcSet(src: string): string | undefined {
 // that fades out once the real image has loaded, instead of a hard pop-in.
 export default function CoverImage({ src, alt, className, color, sizes, loading = 'lazy' }: CoverImageProps) {
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   const srcSet = buildTmdbSrcSet(src);
 
   return (
     <>
       <div
         className="absolute inset-0 transition-opacity duration-300"
-        style={{ backgroundColor: color ?? undefined, opacity: loaded ? 0 : 1 }}
+        style={{ backgroundColor: color ?? undefined, opacity: loaded && !failed ? 0 : 1 }}
         aria-hidden="true"
       />
-      <img
-        src={src}
-        srcSet={srcSet}
-        sizes={srcSet ? sizes : undefined}
-        alt={alt}
-        loading={loading}
-        onLoad={() => setLoaded(true)}
-        className={`${className ?? ''} transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-      />
+      {/* A dead/empty poster URL (network hiccup, no match found) rendering as the browser's
+          broken-image icon looks like the site itself is broken — hiding the <img> and keeping
+          the color placeholder instead reads as an intentional, unadorned card. */}
+      {!failed && (
+        <img
+          src={src}
+          srcSet={srcSet}
+          sizes={srcSet ? sizes : undefined}
+          alt={alt}
+          loading={loading}
+          onLoad={() => setLoaded(true)}
+          onError={() => setFailed(true)}
+          className={`${className ?? ''} transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
     </>
   );
 }

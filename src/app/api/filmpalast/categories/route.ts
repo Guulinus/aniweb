@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 import { getHorrorSlugs, matchCuratedMovies } from '@/lib/filmpalast-client';
-import { getTmdbPopularMovies, getTmdbMoviePosters } from '@/lib/tmdb-client';
+import { getTmdbPopularMovies, getTmdbTrendingMovies, getTmdbMoviePosters } from '@/lib/tmdb-client';
 
 const FP_BASE = 'https://filmpalast.to';
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' };
 
+// filmpalast's own homepage has no separate "trending" section — it's one linear release
+// feed — so a "trending" row built from it was pixel-for-pixel identical to "new". "new"
+// keeps that homepage scrape (a real "just added" list is exactly what that page is), while
+// "trending" is now built the same way as "Beliebt" but from TMDB's weekly-trending signal
+// instead of all-time popularity, so the two rows carry genuinely different movies.
 const CATEGORY_URLS: Record<string, string> = {
-  trending: '/',
   new: '/',
   action: '/search/genre/Action',
   comedy: '/search/genre/Komödie',
@@ -47,11 +51,29 @@ async function getPopularMovies() {
   return movies;
 }
 
+let trendingCache: { movies: Array<{ title: string; slug: string; posterImage: string; year: number | null }>; fetchedAt: number } | null = null;
+const TRENDING_CACHE_TTL_MS = 3 * 60 * 60 * 1000;
+
+async function getTrendingMovies() {
+  if (trendingCache && Date.now() - trendingCache.fetchedAt < TRENDING_CACHE_TTL_MS) {
+    return trendingCache.movies;
+  }
+  const candidates = await getTmdbTrendingMovies();
+  const movies = await matchCuratedMovies(candidates, 20);
+  trendingCache = { movies, fetchedAt: Date.now() };
+  return movies;
+}
+
 export async function GET(request: NextRequest) {
   const category = request.nextUrl.searchParams.get('category') || 'trending';
 
   if (category === 'popular') {
     const movies = await getPopularMovies();
+    return NextResponse.json({ movies }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=21600' } });
+  }
+
+  if (category === 'trending') {
+    const movies = await getTrendingMovies();
     return NextResponse.json({ movies }, { headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=21600' } });
   }
 
@@ -73,6 +95,12 @@ export async function GET(request: NextRequest) {
 
     const movies: Array<{ title: string; slug: string; posterImage: string; year: number | null }> = [];
     const seen = new Set<string>();
+    // filmpalast lists separate entries per audio track for some titles (e.g. "The End of Oak
+    // Street" and "The End of Oak Street *ENGLISH*") — different slugs, so the slug-based `seen`
+    // dedup above doesn't catch them, but showing the same movie twice in one row reads as a
+    // scraping bug rather than a deliberate listing. Collapsing by base title (language/dub
+    // markers stripped) keeps just the first (native/dubbed) listing.
+    const seenBaseTitles = new Set<string>();
 
     $('a[href*="/stream/"]').each((_, el) => {
       const $el = $(el);
@@ -89,15 +117,19 @@ export async function GET(request: NextRequest) {
       const posterImage = absolutize($el.find('img').attr('src') || $el.find('img').attr('data-src') || '');
       const yearMatch = title.match(/\((\d{4})\)/);
       const year = yearMatch ? parseInt(yearMatch[1]) : null;
+      const cleanTitle = title.replace(/\s*\(\d{4}\)$/, '');
+      const baseTitle = cleanTitle.replace(/\s*\*[^*]+\*\s*$/, '').trim().toLowerCase();
 
       if (seen.has(slug)) {
         const existing = movies.find(m => m.slug === slug);
         if (existing && !existing.posterImage && posterImage) existing.posterImage = posterImage;
         return;
       }
+      if (seenBaseTitles.has(baseTitle)) return;
       seen.add(slug);
+      seenBaseTitles.add(baseTitle);
 
-      movies.push({ title: title.replace(/\s*\(\d{4}\)$/, ''), slug, posterImage, year });
+      movies.push({ title: cleanTitle, slug, posterImage, year });
     });
 
     // Cross-reference every category (not just trending/new) against Horror — filmpalast

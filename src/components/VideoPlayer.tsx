@@ -233,6 +233,14 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
     const isHls = isHlsUrl(url);
     const seekPosition = seekTo;
 
+    // Every control (playbackRate, aspectRatio, screenshot, setting, pip, fullscreen,
+    // fullscreenWeb) is one more icon competing for the same ~360px control bar on a phone —
+    // at full width they overflow the viewport, clipping the rightmost (usually fullscreen)
+    // buttons entirely. Screenshot and the web-fullscreen mode (redundant with real fullscreen)
+    // are the least-used on mobile, so they're the ones dropped there instead of shrinking
+    // every icon into an unreadable row.
+    const isNarrowViewport = typeof window !== 'undefined' && window.innerWidth < 640;
+
     const art = new Artplayer({
       container: containerRef.current,
       url,
@@ -240,11 +248,11 @@ export default function VideoPlayer({ links, episodeTitle, animeId, idMal, episo
       autoplay: true,
       playbackRate: true,
       aspectRatio: true,
-      screenshot: true,
+      screenshot: !isNarrowViewport,
       setting: true,
       pip: true,
       fullscreen: true,
-      fullscreenWeb: true,
+      fullscreenWeb: !isNarrowViewport,
       layers: [],
       mutex: true,
       shortcut: true,

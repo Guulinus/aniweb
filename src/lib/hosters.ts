@@ -480,9 +480,15 @@ async function extractMixdrop(embedUrl: string): Promise<string | null> {
       }
     }
 
-    const srcMatch = html.match(/(?:file|src)\s*[=:]\s*["'](https?:\/\/[^"']+)/);
-    if (srcMatch) return srcMatch[1];
-    
+    // The old fallback matched *any* `src="http..."` on the page — including third-party script
+    // tags like Google's reCAPTCHA loader that mixdrop serves when it shows a bot-check wall
+    // instead of the real player, which got returned as if it were a verified working stream.
+    // Only trust a match that actually looks like a media URL.
+    const mediaMatches = [...html.matchAll(/(?:file|src)\s*[=:]\s*["'](https?:\/\/[^"']+)["']/g)]
+      .map(m => m[1])
+      .filter(url => /\.(mp4|m3u8|webm)(\?|$)/i.test(url));
+    if (mediaMatches.length > 0) return mediaMatches[0];
+
     return null;
   } catch {
     return null;
