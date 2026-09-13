@@ -102,17 +102,23 @@ export default function FilmePage() {
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 lg:px-8 pb-8">
-      {/* Hero */}
-      <div className="relative -mx-4 lg:-mx-8 overflow-hidden mb-14 pt-14 md:pt-16">
-        <div className="relative h-80 md:h-[420px]">
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: 'url(/hero-bg.jpg)' }}
-          />
+      {/* Hero — uses an actual current popular movie's poster (blurred) instead of the
+          anime-section's static hero art, so this page reads as its own section rather than a
+          copy-pasted anime page with the headline swapped out. */}
+      <div className="relative -mx-4 lg:-mx-8 overflow-hidden mb-8 md:mb-14 pt-14 md:pt-16">
+        <div className="relative h-64 md:h-[420px] bg-[#0a0a0f]">
+          {popular.movies[0]?.posterImage && (
+            <img
+              src={popular.movies[0].posterImage}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-60"
+              loading="eager"
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0f] via-[#0a0a0f]/70 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-[#0a0a0f] to-transparent" />
 
-          <div className="relative h-full flex flex-col items-start justify-end pb-12 px-8 md:px-16 z-10 max-w-2xl">
+          <div className="relative h-full flex flex-col items-start justify-end pb-8 md:pb-12 px-6 md:px-16 z-10 max-w-2xl">
             <h1 className="text-4xl md:text-6xl font-bold text-white mb-3 leading-tight tracking-tight">
               Filme kostenlos streamen
             </h1>

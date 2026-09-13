@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import { useSettings, THEME_PRESETS } from '@/lib/SettingsContext';
 
@@ -19,16 +19,18 @@ const PRESET_NAMES: Record<string, string> = {
 export default function SettingsPage() {
   const { user, loading, logout, refresh } = useAuth();
   const { settings, setPreferredLanguage, setThemePreset, setCustomColor } = useSettings();
-  const router = useRouter();
-  const [tab, setTab] = useState<Tab>('profile');
+  // Theme/language are localStorage-only preferences that need no account (see AGENTS.md) —
+  // this page used to redirect anyone logged out straight to /login, which meant a visitor
+  // couldn't even change their theme without creating an account first. Default to the tab
+  // that's actually usable for them instead.
+  const [tab, setTab] = useState<Tab>(user ? 'profile' : 'preferences');
+
+  useEffect(() => {
+    if (!loading && user) setTab('profile');
+  }, [loading, user]);
 
   if (loading) {
     return <div className="max-w-2xl mx-auto px-4 py-20 text-center text-gray-400">Lädt...</div>;
-  }
-
-  if (!user) {
-    router.push('/login');
-    return null;
   }
 
   return (
@@ -57,7 +59,16 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {tab === 'profile' && <ProfileTab user={user} refresh={refresh} logout={logout} />}
+      {tab === 'profile' && (
+        user ? <ProfileTab user={user} refresh={refresh} logout={logout} /> : (
+          <div className="text-center py-16 text-gray-400">
+            <p className="mb-4">Melde dich an, um dein Profil zu verwalten.</p>
+            <Link href="/login" className="inline-block px-5 py-2.5 rounded-lg bg-theme-primary hover:bg-theme-hover text-white font-medium transition">
+              Anmelden
+            </Link>
+          </div>
+        )
+      )}
       {tab === 'preferences' && (
         <PreferencesTab
           preferredLanguage={settings.preferredLanguage}

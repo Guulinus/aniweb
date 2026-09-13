@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, Suspense, useRef } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import EpisodeList from '@/components/EpisodeList';
 import RelatedAnime from '@/components/RelatedAnime';
 import RecommendationsRow from '@/components/RecommendationsRow';
 import type { AnimeDetail, AniworldSeason, RelatedMovie } from '@/types';
-import { toSlug } from '@/lib/slug';
+import { toSlug, fromSlug } from '@/lib/slug';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { useLanguage } from '@/hooks/useLanguage';
@@ -15,6 +15,7 @@ import { useToast } from '@/lib/ToastContext';
 
 function AnimeDetailContent({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const animeId = parseInt(searchParams.get('id') ?? '0');
 
   const [anime, setAnime] = useState<AnimeDetail | null>(null);
@@ -41,8 +42,31 @@ function AnimeDetailContent({ slug }: { slug: string }) {
     window.scrollTo(0, 0);
   }, []);
 
+  // A bookmarked, shared, typed, or crawled `/anime/[slug]` link has no `?id=` — without this,
+  // it always showed "Anime nicht gefunden" even though the anime exists, since the detail
+  // fetch below requires a numeric id. Resolving the slug back to a title search and redirecting
+  // to the canonical `?id=` URL lets every other effect here work unchanged.
   useEffect(() => {
-    if (!animeId) { setLoading(false); return; }
+    if (animeId) return;
+    let cancelled = false;
+    fetch(`/api/anilist/search?q=${encodeURIComponent(fromSlug(slug))}`)
+      .then(r => r.json())
+      .then(data => {
+        if (cancelled) return;
+        const results = data?.results ?? [];
+        const match = results.find((r: any) => toSlug(r.title?.english || r.title?.romaji || '') === slug) ?? results[0];
+        if (match?.id) {
+          router.replace(`/anime/${slug}?id=${match.id}`);
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [animeId, slug, router]);
+
+  useEffect(() => {
+    if (!animeId) return;
 
     fetch(`/api/anilist/search?id=${animeId}`)
       .then(r => r.json())
